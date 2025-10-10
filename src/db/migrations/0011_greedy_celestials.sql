@@ -1,0 +1,1 @@
+ALTER TABLE "usage" DROP CONSTRAINT "usage_subscription_id_period_start_unique";

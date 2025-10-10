@@ -1,0 +1,1 @@
+ALTER TABLE "user_lawbot_preferences" ADD COLUMN "prefer_concise_answers" boolean DEFAULT true NOT NULL;

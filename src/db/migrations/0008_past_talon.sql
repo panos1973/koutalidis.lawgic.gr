@@ -1,0 +1,1 @@
+ALTER TYPE "tool_name" ADD VALUE 'contract';

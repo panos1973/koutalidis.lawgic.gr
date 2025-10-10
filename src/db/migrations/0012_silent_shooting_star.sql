@@ -1,0 +1,1 @@
+ALTER TABLE "usage" ADD CONSTRAINT "usage_subscription_id_period_start_unique" UNIQUE("subscription_id","period_start");
