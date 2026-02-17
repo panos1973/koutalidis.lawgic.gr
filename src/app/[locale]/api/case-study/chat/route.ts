@@ -22,6 +22,7 @@ import { AISDKExporter } from 'langsmith/vercel'
 import { searchSimilarDocuments } from '@/lib/elasticsearch_/embedding'
 import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
 import { revalidatePath } from 'next/cache'
+import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
 import {
   extractContentFromUrl,
   searchLibraryFiles,
@@ -283,11 +284,12 @@ export async function POST(req: Request) {
     
     console.log(`Using ${maxTokens} max tokens for response`)
 
-    const result = await streamText({
+    const result = streamText({
       model: selectedModel,
       system: systemPrompt,
       maxTokens: maxTokens,
       experimental_telemetry: telemetrySettings,
+      providerOptions: getDefaultProviderOptions('high'),
       // Use 1M context only when needed for large cases
       ...(needsExtendedContext && {
         headers: {

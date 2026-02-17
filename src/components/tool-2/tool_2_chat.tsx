@@ -211,7 +211,7 @@ const Tool2Chat: NextPage<Props> = ({
     append,
   } = useChat({
     api: `/${locale}/api/tool-2/chat`,
-    maxToolRoundtrips: 1,
+    maxSteps: 2,
     initialMessages: prevMessages,
     body: {
       tool2Id,

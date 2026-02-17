@@ -3,6 +3,7 @@ import { streamText, convertToCoreMessages } from "ai";
 import { getLLMModel } from "@/lib/models/llmModelFactory";
 import { STANDARD_CONTRACT_PROMPTS } from "@/lib/prompts/standard_contract";
 import { getDataFieldsOfStandardContracts } from "@/app/[locale]/actions/standard_contract_actions";
+import { getDefaultProviderOptions } from '@/lib/pipelineConfig';
 
 export const maxDuration = 30;
 const maxOutputTokenSize = 4000;
@@ -34,10 +35,11 @@ export async function POST(req: Request) {
       .replace("{{CONTRACT_FIELDS}}", contractFields);
 
     let selectedModel = await getLLMModel("claude-sonnet-4-6");
-    const result = await streamText({
+    const result = streamText({
       model: wrapAISDKModel(selectedModel, { name: "contract" }),
       // No headers needed - using claude-sonnet-4-6 with 200K default
       maxTokens: maxOutputTokenSize,
+      providerOptions: getDefaultProviderOptions('medium'),
       system: systemPrompt,
       messages: convertToCoreMessages([...messages]),
 

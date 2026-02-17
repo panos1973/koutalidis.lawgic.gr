@@ -588,7 +588,7 @@ const ContractChat: NextPage<Props> = ({
     stop,
   } = useChat({
     api: `/${locale}/api/contracts/chat`,
-    maxToolRoundtrips: 2,
+    maxSteps: 3,
     initialMessages:
       drafts.map((d) => {
         return {

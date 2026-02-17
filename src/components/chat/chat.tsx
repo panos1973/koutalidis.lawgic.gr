@@ -480,7 +480,7 @@ const Chat: NextPage<Props> = ({
     append,
   } = useChat({
     api: `/${locale}/api/chat`,
-    maxToolRoundtrips: 2,
+    maxSteps: 3,
     initialMessages: prevMessages,
     body: {
       chatId,

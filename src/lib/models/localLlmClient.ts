@@ -35,7 +35,7 @@ export async function streamTextFromLocalLLM(config: LocalLLMConfig) {
 
   try {
     // Use Vercel AI SDK's streamText with our local provider
-    const result = await aiStreamText({
+    const result = aiStreamText({
       model: localLLM(HF_MODEL) as any,
       system: config.system,
       messages: config.messages,
@@ -113,7 +113,7 @@ User Query: ${query}
 Based on the context information provided above, answer the user's query thoroughly and accurately. Cite specific information from the context when relevant.`
 
   try {
-    const result = await aiStreamText({
+    const result = aiStreamText({
       model: localLLM(HF_MODEL) as any,
       system: toolPrompt,
       messages: [{ role: 'user', content: query }],

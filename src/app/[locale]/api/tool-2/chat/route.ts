@@ -11,6 +11,7 @@ import { VoyageAIClient, VoyageAI } from 'voyageai'
 import { AISDKExporter } from 'langsmith/vercel'
 // import { searchVaultFiles } from '@/app/[locale]/actions/vault_actions'
 import { createPostgressVectorStore } from '@/app/[locale]/actions/tool_2_actions'
+import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
 
 export const maxDuration = 180
 // const maxOutputTokenSize = 4000
@@ -142,10 +143,11 @@ export async function POST(req: Request) {
       metadata: { userEmail, userQuery },
       runName: 'tool_2_api_v1',
     })
-       const result = await streamText({
+       const result = streamText({
       model: selectedModel,
       system: systemPrompt,
       maxTokens: maxOutputTokenSize,
+      providerOptions: getDefaultProviderOptions('medium'),
       experimental_telemetry: telemetrySettings,
       // No headers needed - 200K is default
       tools: {

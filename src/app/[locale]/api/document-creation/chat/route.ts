@@ -25,6 +25,7 @@ import {
 } from '@/app/[locale]/actions/library_actions'
 import { DOCUMENT_CREATION_PROMPTS } from '@/lib/prompts/document_creation'
 import { getTemplateByKey } from '@/lib/documentCreationTemplateUtils'
+import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
 
 export const maxDuration = 180
 
@@ -272,10 +273,11 @@ export async function POST(req: Request) {
 
     console.log(`Using ${maxTokens} max tokens for ${finalDocumentMode} mode`)
     
-    const result = await streamText({
+    const result = streamText({
       model: selectedModel,
       system: systemPrompt,
       maxTokens: maxTokens,
+      providerOptions: getDefaultProviderOptions('medium'),
       experimental_telemetry: telemetrySettings,
       // No headers needed - 200K is sufficient for document creation
       tools: {

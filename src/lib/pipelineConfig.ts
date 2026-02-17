@@ -2,6 +2,10 @@ import type { QueryType, QueryClassification } from './queryClassifier'
 
 // ─── Pipeline Configuration Types ────────────────────────────────────────────
 
+// Effort levels for Sonnet 4.6 / Opus 4.6
+// Controls how much reasoning the model applies
+export type EffortLevel = 'low' | 'medium' | 'high'
+
 export interface PipelineConfig {
   // Search behavior
   skipDiscoverySearch: boolean
@@ -23,6 +27,12 @@ export interface PipelineConfig {
   // Source preferences
   internetSearchPriority: 'low' | 'normal' | 'high'
   requireAllSources: boolean
+
+  // Sonnet 4.6 thinking & effort configuration
+  // Adaptive thinking: Claude decides when/how much to think
+  // Effort: controls reasoning depth (low=fast/cheap, high=thorough)
+  enableAdaptiveThinking: boolean
+  effort: EffortLevel
 
   // System prompt adjustments
   systemPromptSuffix: string
@@ -62,6 +72,11 @@ const PIPELINE_CONFIGS: Record<QueryType, PipelineConfig> = {
     internetSearchPriority: 'low',
     requireAllSources: false,
 
+    // Simple lookups: low effort = fast, cheap, minimal reasoning
+    // "What does Article 5 say?" doesn't need deep thinking
+    enableAdaptiveThinking: true,
+    effort: 'low',
+
     systemPromptSuffix: '',
     systemPromptSuffixEl: '',
 
@@ -94,6 +109,10 @@ const PIPELINE_CONFIGS: Record<QueryType, PipelineConfig> = {
 
     internetSearchPriority: 'high',
     requireAllSources: false,
+
+    // Temporal queries: medium effort = moderate reasoning for amendment chains
+    enableAdaptiveThinking: true,
+    effort: 'medium',
 
     systemPromptSuffix: `
 
@@ -147,6 +166,10 @@ This query requires temporal legal analysis. You MUST:
     internetSearchPriority: 'high',
     requireAllSources: true,
 
+    // Multi-hop queries: high effort = deep reasoning for combining multiple provisions
+    enableAdaptiveThinking: true,
+    effort: 'high',
+
     systemPromptSuffix: `
 
 MULTI-STEP ANALYSIS INSTRUCTIONS:
@@ -198,6 +221,10 @@ This query requires combining multiple legal provisions. You MUST:
 
     internetSearchPriority: 'high',
     requireAllSources: true,
+
+    // Comparative queries: high effort = thorough reasoning for framework comparison
+    enableAdaptiveThinking: true,
+    effort: 'high',
 
     systemPromptSuffix: `
 
@@ -255,6 +282,42 @@ export function getPipelinePromptSuffix(
   return locale === 'el'
     ? config.systemPromptSuffixEl
     : config.systemPromptSuffix
+}
+
+/**
+ * Builds the Anthropic provider options for Sonnet 4.6 thinking & effort.
+ * These are passed via providerOptions in the Vercel AI SDK streamText call.
+ *
+ * Requires @ai-sdk/anthropic >= 1.x for full support.
+ * With older versions, these options are safely ignored.
+ */
+export function getAnthropicProviderOptions(config: PipelineConfig): {
+  anthropic: Record<string, unknown>
+} {
+  const options: Record<string, unknown> = {}
+
+  if (config.enableAdaptiveThinking) {
+    options.thinking = { type: 'adaptive' }
+  }
+
+  options.effort = config.effort
+
+  return { anthropic: options }
+}
+
+/**
+ * Builds provider options with a specific effort level (for non-pipeline routes).
+ * Use this for tool routes that don't have the query classifier.
+ */
+export function getDefaultProviderOptions(effort: EffortLevel = 'medium'): {
+  anthropic: Record<string, unknown>
+} {
+  return {
+    anthropic: {
+      thinking: { type: 'adaptive' },
+      effort,
+    },
+  }
 }
 
 /**

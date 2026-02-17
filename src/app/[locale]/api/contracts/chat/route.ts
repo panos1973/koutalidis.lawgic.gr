@@ -15,6 +15,7 @@ import { AISDKExporter } from 'langsmith/vercel'
 import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
 import { revalidatePath } from 'next/cache'
 import { extractContentFromUrl } from '@/app/[locale]/actions/library_actions'
+import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
 
 export const maxDuration = 180
 const maxOutputTokenSize = 8192
@@ -219,11 +220,12 @@ export async function POST(req: Request) {
         console.log('System prompt constructed with mode:', isChapterMode ? 'CHAPTER' : 'FULL')
 
         const telemetrySettings = AISDKExporter.getSettings()
-        const result = await streamText({
+        const result = streamText({
           model: selectedModel,
           experimental_telemetry: telemetrySettings,
           maxTokens: maxOutputTokenSize,
           system: systemPrompt,
+          providerOptions: getDefaultProviderOptions('medium'),
           tools: {
             searchContractDocuments: tool({
               description:

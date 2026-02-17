@@ -468,7 +468,7 @@ const CaseChat: NextPage<Props> = ({
     setMessages,
   } = useChat({
     api: `/${locale}/api/case-study/chat`,
-    maxToolRoundtrips: 1,
+    maxSteps: 2,
     initialMessages: prevMessages,
     body: {
       caseId,
