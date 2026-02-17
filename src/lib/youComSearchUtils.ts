@@ -62,9 +62,9 @@ interface SearchContext {
 // === CONFIGURATION - FIXED API KEY HANDLING ===
 const CONFIG = {
   // Use environment variable OR hardcoded key with proper escaping
-  API_KEY: process.env.YOUCOM_API_KEY || 
-           process.env.You_com_api || 
-           'ydc-sk-abc6226161e4cad0-NUkBk8NUFPZtWmG5N5s1e7BbTFRUUWXU-9d183b37' + String.fromCharCode(60) + '__' + String.fromCharCode(62) + '1S30vBETU8N2v5f4EV8pGIIF',
+  API_KEY: process.env.YOUCOM_API_KEY ||
+           process.env.You_com_api ||
+           'ydc-sk-cf3700ca197e0cf0-Q7nZD16yX5mlViAPXNK5V0sA3MfKwgkx-a28af613',
   API_URL: 'https://api.ydc-index.io/search', // Correct endpoint without /v1
   TIMEOUT: 35000,
   MAX_RETRIES: 2,

@@ -12,6 +12,7 @@ import db from '@/db/drizzle'
 import { getLLMModel } from '@/lib/models/llmModelFactory'
 import { TOOL_2_PROMPTS } from '@/lib/prompts/tool_2'
 import { elasticsearchRetrieverHybridSearch } from '@/lib/retrievers/elasticsearch_retriever'
+import { weaviateCourtSearch } from '@/lib/retrievers/weaviate_court_retriever'
 import { decodeEscapedString } from '@/lib/decoding'
 import { VoyageAIClient, VoyageAI } from 'voyageai'
 import { AISDKExporter } from 'langsmith/vercel'
@@ -361,11 +362,23 @@ export async function POST(req: Request) {
               // Retrieve Greek Court Decisions if enabled
               if (includeGreekCourtDecisions) {
                 console.log('Retrieving Greek Court Decisions...')
-                const courtResults = await retrieveAndFilterData(
-                  userQuery,
-                  '0825_pastcase_collection',
-                  MAX_PASTCASE_CHARACTERS
-                )
+                let courtResults: string[] = []
+                try {
+                  const weaviateResults = await weaviateCourtSearch(userQuery)
+                  if (weaviateResults.length > 0) {
+                    courtResults = weaviateResults.map(r => r.fullReference).slice(0, Math.ceil(MAX_PASTCASE_CHARACTERS / 3000))
+                    console.log(`Court Decisions from Weaviate: ${courtResults.length}`)
+                  }
+                } catch (e) {
+                  console.warn('⚠️ Weaviate court search failed, using Elasticsearch fallback')
+                }
+                if (courtResults.length === 0) {
+                  courtResults = await retrieveAndFilterData(
+                    userQuery,
+                    '0825_pastcase_collection',
+                    MAX_PASTCASE_CHARACTERS
+                  )
+                }
                 console.log(`Retrieved ${courtResults.length} court decisions`)
                 combinedRetrievedData = [...combinedRetrievedData, ...courtResults]
               }

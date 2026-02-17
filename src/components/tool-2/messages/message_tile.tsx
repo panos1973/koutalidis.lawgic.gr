@@ -298,8 +298,8 @@ const MessageTile: NextPage<Props> = ({
 
   return (
     <div
-      className={cn('whitespace-pre-wrap text-sm mb-6 py-2 px-4 rounded-3xl ', {
-        'self-end bg-slate-200  max-w-fit  md:max-w-[40svw] rounded-br-none text-right':
+      className={cn('text-sm mb-6 py-2 px-4 rounded-3xl ', {
+        'whitespace-pre-wrap self-end bg-slate-200  max-w-fit  md:max-w-[40svw] rounded-br-none text-right':
           m.role === 'user',
         'border border-slate-200 max-w-fit rounded-bl-none py-6':
           m.role === 'assistant',
