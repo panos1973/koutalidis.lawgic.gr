@@ -223,6 +223,7 @@ export async function POST(req: Request) {
         const result = streamText({
           model: selectedModel,
           experimental_telemetry: telemetrySettings,
+          experimental_continueSteps: true,
           maxTokens: maxOutputTokenSize,
           system: systemPrompt,
           providerOptions: getDefaultProviderOptions('medium'),

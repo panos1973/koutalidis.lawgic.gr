@@ -306,6 +306,7 @@ export async function POST(req: Request) {
       model: selectedModel,
       system: systemPrompt,
       maxTokens: MAX_OUTPUT_TOKEN_SIZE,
+      experimental_continueSteps: true,
       providerOptions: getDefaultProviderOptions('high'),
       experimental_telemetry: telemetrySettings,
       ...(needsExtendedContext && {

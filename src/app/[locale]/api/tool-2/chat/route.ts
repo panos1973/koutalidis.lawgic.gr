@@ -147,6 +147,7 @@ export async function POST(req: Request) {
       model: selectedModel,
       system: systemPrompt,
       maxTokens: maxOutputTokenSize,
+      experimental_continueSteps: true,
       providerOptions: getDefaultProviderOptions('medium'),
       experimental_telemetry: telemetrySettings,
       // No headers needed - 200K is default
