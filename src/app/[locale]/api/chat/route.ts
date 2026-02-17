@@ -71,13 +71,16 @@ console.log('USING LOCAL:', USE_LOCAL_LLM)
 console.log('====================================')
 // Allow streaming responses up to 180 seconds
 export const maxDuration = 180
-const maxOutputTokenSize = 8192
+
+// Sonnet 4.6 supports up to 64K output tokens; 16K is a good default for legal answers
+const maxOutputTokenSize = 16384
 
 // 🛠️ CRITICAL FIX: Make useVoyage control work properly
 const useVoyage = false
 
 // 🔥 TOKEN MANAGEMENT CONSTANTS
-const MAX_CONTEXT_TOKENS = 1000000 // Leave 10k buffer for Claude's max 200k
+// Sonnet 4.6: 200K default context, 1M available in beta
+const MAX_CONTEXT_TOKENS = 200000
 const MAX_RECENT_MESSAGES = 3 // Reduced from 6 to 3 (1.5 exchanges)
 const LOG_FILE_PATH = path.join(process.cwd(), 'logs', 'chat_api_logs.txt')
 
