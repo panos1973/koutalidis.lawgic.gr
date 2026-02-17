@@ -47,6 +47,7 @@ import {
   deepSeekCircuitBreaker,
 } from '@/lib/deepseekSearchUtils'
 import { searchYouComForLegal } from '@/lib/youComSearchUtils'
+import { retrieveCourtDecisionsFromWeaviate } from '@/lib/retrievers/weaviate_court_retriever'
 import Anthropic from '@anthropic-ai/sdk'
 import db from '@/db/drizzle'
 import {
@@ -98,7 +99,7 @@ const SAFE_FEATURES = {
 
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY
 const YOUCOM_API_KEY =
-  'ydc-sk-abc6226161e4cad0-NUkBk8NUFPZtWmG5N5s1e7BbTFRUUWXU-9d183b37<__>1S30vBETU8N2v5f4EV8pGIIF'
+  process.env.YOUCOM_API_KEY || process.env.You_com_api || 'ydc-sk-cf3700ca197e0cf0-Q7nZD16yX5mlViAPXNK5V0sA3MfKwgkx-a28af613'
 const USE_YOUCOM = true
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY
 const USE_DEEPSEEK = process.env.ENABLE_DEEPSEEK === 'true'
@@ -1086,6 +1087,22 @@ export async function POST(req: Request) {
 
     const allSearchPromises: Promise<void>[] = []
 
+    // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback
+    const retrieveCourtDecisions = async (maxChars: number) => {
+      try {
+        console.log('📚 Attempting Weaviate court retrieval...')
+        const weaviateResults = await retrieveCourtDecisionsFromWeaviate(userQuery, maxChars)
+        if (weaviateResults.aiVersions.length > 0) {
+          console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
+          return weaviateResults
+        }
+        console.log('⚠️ Weaviate returned no results, falling back to Elasticsearch')
+      } catch (error) {
+        console.warn('⚠️ Weaviate court retrieval failed, falling back to Elasticsearch:', error)
+      }
+      return retrieveAndFilterData(userQuery, 'dev_greek_court', maxChars, undefined)
+    }
+
     if (
       preferences.includeGreekLaws &&
       preferences.includeGreekCourtDecisions
@@ -1103,17 +1120,12 @@ export async function POST(req: Request) {
                 balancedMaxLawChars,
                 'voyage-3.5'
               ),
-              retrieveAndFilterData(
-                userQuery,
-                'dev_greek_court',
-                balancedMaxCaseChars,
-                undefined
-              ),
+              retrieveCourtDecisions(balancedMaxCaseChars),
             ])
 
             law_data = lawResults
             pastcase_data = caseResults
-            console.log('✅ [ES] Elasticsearch completed')
+            console.log('✅ [ES+Weaviate] Data retrieval completed')
           } catch (error) {
             console.error('❌ [ES] Elasticsearch failed:', error)
           }
@@ -1139,15 +1151,10 @@ export async function POST(req: Request) {
       allSearchPromises.push(
         (async () => {
           try {
-            pastcase_data = await retrieveAndFilterData(
-              userQuery,
-              'dev_greek_court',
-              adjustedBudgets.maxCaseChars,
-              undefined
-            )
-            console.log('✅ [ES] Elasticsearch cases completed')
+            pastcase_data = await retrieveCourtDecisions(adjustedBudgets.maxCaseChars)
+            console.log('✅ Court decisions retrieval completed')
           } catch (error) {
-            console.error('❌ [ES] Case search failed:', error)
+            console.error('❌ Case search failed:', error)
           }
         })()
       )
@@ -1533,6 +1540,22 @@ export async function POST(req: Request) {
 
             const allSearchPromises: Promise<void>[] = []
 
+            // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback
+            const retrieveCourtDecisionsTool = async (maxChars: number) => {
+              try {
+                console.log('📚 Attempting Weaviate court retrieval (tool)...')
+                const weaviateResults = await retrieveCourtDecisionsFromWeaviate(userQuery, maxChars)
+                if (weaviateResults.aiVersions.length > 0) {
+                  console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
+                  return weaviateResults
+                }
+                console.log('⚠️ Weaviate returned no results, falling back to Elasticsearch')
+              } catch (error) {
+                console.warn('⚠️ Weaviate court retrieval failed, falling back to Elasticsearch:', error)
+              }
+              return retrieveAndFilterData(userQuery, 'dev_greek_court', maxChars, undefined)
+            }
+
             if (
               preferences.includeGreekLaws &&
               preferences.includeGreekCourtDecisions
@@ -1552,17 +1575,12 @@ export async function POST(req: Request) {
                         balancedMaxLawChars,
                         'voyage-3.5'
                       ),
-                      retrieveAndFilterData(
-                        userQuery,
-                        'dev_greek_court',
-                        balancedMaxCaseChars,
-                        undefined
-                      ),
+                      retrieveCourtDecisionsTool(balancedMaxCaseChars),
                     ])
 
                     law_data = lawResults
                     pastcase_data = caseResults
-                    console.log('✅ [ES] Elasticsearch completed')
+                    console.log('✅ [ES+Weaviate] Data retrieval completed')
                   } catch (error) {
                     console.error('❌ [ES] Elasticsearch failed:', error)
                   }
@@ -1588,15 +1606,10 @@ export async function POST(req: Request) {
               allSearchPromises.push(
                 (async () => {
                   try {
-                    pastcase_data = await retrieveAndFilterData(
-                      userQuery,
-                      'dev_greek_court',
-                      adjustedBudgets.maxCaseChars,
-                      undefined
-                    )
-                    console.log('✅ [ES] Elasticsearch cases completed')
+                    pastcase_data = await retrieveCourtDecisionsTool(adjustedBudgets.maxCaseChars)
+                    console.log('✅ Court decisions retrieval completed')
                   } catch (error) {
-                    console.error('❌ [ES] Case search failed:', error)
+                    console.error('❌ Case search failed:', error)
                   }
                 })()
               )
@@ -1914,12 +1927,16 @@ export async function POST(req: Request) {
                   preferences.includeGreekCourtDecisions &&
                   discoveredGaps.newKeywords.length > 0
                 ) {
-                  const secondCaseSearch = await retrieveAndFilterData(
-                    discoveredQuery,
-                    'dev_greek_court',
-                    adjustedBudgets.maxCaseChars / 2,
-                    undefined
-                  )
+                  // Try Weaviate first, fallback to Elasticsearch
+                  let secondCaseSearch
+                  try {
+                    secondCaseSearch = await retrieveCourtDecisionsFromWeaviate(discoveredQuery, adjustedBudgets.maxCaseChars / 2)
+                    if (secondCaseSearch.aiVersions.length === 0) {
+                      secondCaseSearch = await retrieveAndFilterData(discoveredQuery, 'dev_greek_court', adjustedBudgets.maxCaseChars / 2, undefined)
+                    }
+                  } catch {
+                    secondCaseSearch = await retrieveAndFilterData(discoveredQuery, 'dev_greek_court', adjustedBudgets.maxCaseChars / 2, undefined)
+                  }
 
                   secondSearchResults = {
                     cases: secondCaseSearch,
