@@ -22,6 +22,7 @@ import { AISDKExporter } from 'langsmith/vercel'
 import { searchSimilarDocuments } from '@/lib/elasticsearch_/embedding'
 import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
 import { revalidatePath } from 'next/cache'
+import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
 import {
   extractContentFromUrl,
   searchLibraryFiles,
@@ -215,7 +216,7 @@ export async function POST(req: Request) {
   try {
     console.log('POST request initiated')
 
-    const selectedModel = await getLLMModel('claude-sonnet-4-5-20250929')
+    const selectedModel = await getLLMModel('claude-sonnet-4-6')
     console.log('Model loaded')
 
     // Get results from Elasticsearch
@@ -283,11 +284,12 @@ export async function POST(req: Request) {
     
     console.log(`Using ${maxTokens} max tokens for response`)
 
-    const result = await streamText({
+    const result = streamText({
       model: selectedModel,
       system: systemPrompt,
       maxTokens: maxTokens,
       experimental_telemetry: telemetrySettings,
+      providerOptions: getDefaultProviderOptions('high'),
       // Use 1M context only when needed for large cases
       ...(needsExtendedContext && {
         headers: {

@@ -42,7 +42,7 @@ const getLocaleFromCookies = () => {
 // Cache and reuse the LLM model for generating titles
 const getCachedLLMModelForTitle = async () => {
   if (!cachedLLMModelForTitle) {
-    cachedLLMModelForTitle = await getLLMModel('claude-3-haiku@20240307')
+    cachedLLMModelForTitle = await getLLMModel('claude-haiku-4-5-20251001')
   }
   return cachedLLMModelForTitle
 }
@@ -50,7 +50,7 @@ const getCachedLLMModelForTitle = async () => {
 // Cache and reuse the LLM model for generating contract sections
 const getCachedLLMModelForSections = async () => {
   if (!cachedLLMModelForSections) {
-    cachedLLMModelForSections = await getLLMModel('claude-sonnet-4-5-20250929')
+    cachedLLMModelForSections = await getLLMModel('claude-sonnet-4-6')
   }
   return cachedLLMModelForSections
 }
@@ -407,7 +407,7 @@ const generateContractSections = async (contract: string) => {
   const selectedModel = await getCachedLLMModelForSections()
 
   const { object } = await generateObject({
-    // model: await getLLMModel('claude-3-5-sonnet@20240620'),
+    // model: await getLLMModel('claude-sonnet-4-6'),
     // model: openai("gpt-4o"),
     // schema: ContractSectionSchema,
     model: selectedModel,

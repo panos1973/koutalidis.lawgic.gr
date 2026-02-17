@@ -31,5 +31,5 @@ export async function getLLMModel(modelName: string) {
       return anthropic(modelName.replace('@', '-'))
     }
   }
-  return anthropic('claude-3-haiku-20240307')
+  return anthropic('claude-haiku-4-5-20251001')
 }

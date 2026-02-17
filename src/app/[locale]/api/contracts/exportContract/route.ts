@@ -94,7 +94,7 @@ Important:
 - If unsure about chapters vs duplicates, prefer removing duplicates`
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       messages: [
         {
@@ -216,7 +216,7 @@ ABSOLUTE RULES:
 ${endingsText}`
 
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4000,
       messages: [
         {

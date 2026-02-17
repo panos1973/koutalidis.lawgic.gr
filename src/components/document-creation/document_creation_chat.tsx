@@ -517,7 +517,7 @@ const DocumentCreationChat: NextPage<Props> = ({
     stop,
   } = useChat({
     api: `/${locale}/api/document-creation/chat`,
-    maxToolRoundtrips: 1,
+    maxSteps: 2,
     initialMessages: prevMessages,
     body: {
       documentCreationId,

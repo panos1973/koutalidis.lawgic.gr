@@ -229,7 +229,7 @@ const ContractComparisonChat: NextPage<Props> = ({
     append,
   } = useChat({
     api: `/${locale}/api/contract-comparison/chat`,
-    maxToolRoundtrips: 1,
+    maxSteps: 2,
     initialMessages: prevMessages,
     body: {
       comparisonId,

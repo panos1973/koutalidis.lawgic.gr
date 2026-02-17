@@ -269,7 +269,7 @@ const parseFileContent = async (
 const countTokensWithAnthropic = async (msg: string): Promise<number> => {
   const client = new Anthropic()
   const response = await client.messages.countTokens({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     messages: [
       {
         role: 'user',
@@ -295,7 +295,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body: TokenCountRequest = await req.json()
-    const { files, model = 'claude-3-5-sonnet-20241022' } = body
+    const { files, model = 'claude-sonnet-4-6' } = body
 
     if (!files || !Array.isArray(files) || files.length === 0) {
       return NextResponse.json(

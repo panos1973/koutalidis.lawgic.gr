@@ -53,6 +53,18 @@ import {
   streamTextFromLocalLLM,
   checkLocalLLMHealth,
 } from '@/lib/models/localLlmClient'
+import {
+  classifyQuery,
+  classifyQueryByPatterns,
+  type QueryClassification,
+} from '@/lib/queryClassifier'
+import {
+  getPipelineConfig,
+  getPipelinePromptSuffix,
+  getAdjustedBudgets,
+  getAnthropicProviderOptions,
+  type PipelineConfig,
+} from '@/lib/pipelineConfig'
 
 const USE_LOCAL_LLM = process.env.LOCAL_LLM === 'true'
 console.log('====================================')
@@ -60,13 +72,16 @@ console.log('USING LOCAL:', USE_LOCAL_LLM)
 console.log('====================================')
 // Allow streaming responses up to 180 seconds
 export const maxDuration = 180
-const maxOutputTokenSize = 8192
+
+// Sonnet 4.6 supports up to 64K output tokens; 16K is a good default for legal answers
+const maxOutputTokenSize = 16384
 
 // 🛠️ CRITICAL FIX: Make useVoyage control work properly
 const useVoyage = false
 
 // 🔥 TOKEN MANAGEMENT CONSTANTS
-const MAX_CONTEXT_TOKENS = 1000000 // Leave 10k buffer for Claude's max 200k
+// Sonnet 4.6: 200K default context, 1M available in beta
+const MAX_CONTEXT_TOKENS = 200000
 const MAX_RECENT_MESSAGES = 3 // Reduced from 6 to 3 (1.5 exchanges)
 const LOG_FILE_PATH = path.join(process.cwd(), 'logs', 'chat_api_logs.txt')
 
@@ -930,6 +945,37 @@ export async function POST(req: Request) {
   const userQuery = recentMessages[recentMessages.length - 1].content
   console.log('User query extracted:', userQuery)
 
+  // ── STAGE 0: Query Classification & Pipeline Routing ──────────────────
+  // Classify query to determine optimal pipeline strategy
+  // Uses Haiku (~200ms, ~$0.0002) with pattern-based fallback
+  let queryClassification: QueryClassification
+  try {
+    // Run classifier in parallel with non-dependent setup work
+    queryClassification = USE_LOCAL_LLM
+      ? classifyQueryByPatterns(userQuery) // Skip API call for local LLM mode
+      : await classifyQuery(userQuery)
+  } catch (classificationError) {
+    console.warn(
+      '[Pipeline] Classification failed, defaulting to simple_lookup:',
+      classificationError
+    )
+    queryClassification = classifyQueryByPatterns(userQuery)
+  }
+
+  const pipelineConfig = getPipelineConfig(queryClassification)
+  const pipelinePromptSuffix = getPipelinePromptSuffix(pipelineConfig, locale)
+
+  console.log(
+    `[Pipeline] Route: ${pipelineConfig.pipelineLabel} | Type: ${queryClassification.queryType} | Confidence: ${queryClassification.confidence}`
+  )
+  console.log(
+    `[Pipeline] Detected laws: ${queryClassification.detectedLaws.join(', ') || 'none'}`
+  )
+  console.log(
+    `[Pipeline] Config: discovery=${!pipelineConfig.skipDiscoverySearch}, secondPass=${pipelineConfig.enableSecondPassSearch}, contra=${pipelineConfig.enableContraSearch}`
+  )
+  // ── END Query Classification ──────────────────────────────────────────
+
   const conversationTokens = estimateTokens(JSON.stringify(systemMessages))
   const totalCurrentTokens = systemTokens + conversationTokens
 
@@ -964,6 +1010,24 @@ export async function POST(req: Request) {
       cachedVaultFiles.push(cachedMsg)
     }
   }
+
+  // Append pipeline-specific instructions to the system message
+  const pipelineEnhancedSystemMessage =
+    enhancedSystemMessage + pipelinePromptSuffix
+
+  // Calculate adjusted budgets based on pipeline config
+  const adjustedBudgets = getAdjustedBudgets(
+    pipelineConfig,
+    MAX_LAW_CHARACTERS_V2,
+    MAX_PASTCASE_CHARACTERS,
+    RERANKED_K
+  )
+
+  console.log(`[Pipeline] Adjusted budgets:`, {
+    maxLawChars: adjustedBudgets.maxLawChars,
+    maxCaseChars: adjustedBudgets.maxCaseChars,
+    rerankTopK: adjustedBudgets.rerankTopK,
+  })
 
   let result
 
@@ -1008,7 +1072,7 @@ export async function POST(req: Request) {
     }
 
     console.log(
-      `🚀 Starting searches - ES:${
+      `🚀 [${pipelineConfig.pipelineLabel}] Starting searches - ES:${
         preferences.includeGreekLaws || preferences.includeGreekCourtDecisions
       } PX:${!!PERPLEXITY_API_KEY} DS:${USE_DEEPSEEK} YC:${USE_YOUCOM}`
     )
@@ -1029,8 +1093,8 @@ export async function POST(req: Request) {
       allSearchPromises.push(
         (async () => {
           try {
-            const balancedMaxLawChars = MAX_LAW_CHARACTERS_V2
-            const balancedMaxCaseChars = Math.floor(MAX_PASTCASE_CHARACTERS / 2)
+            const balancedMaxLawChars = adjustedBudgets.maxLawChars
+            const balancedMaxCaseChars = Math.floor(adjustedBudgets.maxCaseChars / 2)
 
             const [lawResults, caseResults] = await Promise.all([
               retrieveAndFilterData(
@@ -1062,7 +1126,7 @@ export async function POST(req: Request) {
             law_data = await retrieveAndFilterData(
               userQuery,
               'greek_laws_collection',
-              MAX_LAW_CHARACTERS_V2,
+              adjustedBudgets.maxLawChars,
               'voyage-3.5'
             )
             console.log('✅ [ES] Elasticsearch laws completed')
@@ -1078,7 +1142,7 @@ export async function POST(req: Request) {
             pastcase_data = await retrieveAndFilterData(
               userQuery,
               'dev_greek_court',
-              MAX_PASTCASE_CHARACTERS,
+              adjustedBudgets.maxCaseChars,
               undefined
             )
             console.log('✅ [ES] Elasticsearch cases completed')
@@ -1315,7 +1379,7 @@ export async function POST(req: Request) {
     }
 
     result = await streamTextFromLocalLLM({
-      system: enhancedSystemMessage,
+      system: pipelineEnhancedSystemMessage,
       messages: enrichedMessages,
       maxTokens: maxOutputTokenSize,
       temperature: 0.7,
@@ -1373,18 +1437,25 @@ export async function POST(req: Request) {
   } else {
     console.log('🧠 Using CLAUDE')
 
-    const selectedModel = await getLLMModel('claude-sonnet-4-5-20250929')
+    const selectedModel = await getLLMModel('claude-sonnet-4-6')
     const telemetrySettings = AISDKExporter.getSettings({
       metadata: { userEmail, userQuery },
       runName: 'athena_api_v1',
     })
 
-    result = await streamText({
+    // Build Sonnet 4.6 thinking & effort options based on pipeline classification
+    const anthropicOptions = getAnthropicProviderOptions(pipelineConfig)
+    console.log(
+      `[Pipeline] Anthropic options: effort=${pipelineConfig.effort}, adaptiveThinking=${pipelineConfig.enableAdaptiveThinking}`
+    )
+
+    result = streamText({
       model: selectedModel,
-      system: enhancedSystemMessage,
+      system: pipelineEnhancedSystemMessage,
       maxTokens: maxOutputTokenSize,
       experimental_telemetry: telemetrySettings,
       experimental_continueSteps: true,
+      providerOptions: anthropicOptions,
       tools: {
         answerLawQuestions: tool({
           description:
@@ -1469,9 +1540,9 @@ export async function POST(req: Request) {
               allSearchPromises.push(
                 (async () => {
                   try {
-                    const balancedMaxLawChars = MAX_LAW_CHARACTERS_V2
+                    const balancedMaxLawChars = adjustedBudgets.maxLawChars
                     const balancedMaxCaseChars = Math.floor(
-                      MAX_PASTCASE_CHARACTERS / 2
+                      adjustedBudgets.maxCaseChars / 2
                     )
 
                     const [lawResults, caseResults] = await Promise.all([
@@ -1504,7 +1575,7 @@ export async function POST(req: Request) {
                     law_data = await retrieveAndFilterData(
                       userQuery,
                       'greek_laws_collection',
-                      MAX_LAW_CHARACTERS_V2,
+                      adjustedBudgets.maxLawChars,
                       'voyage-3.5'
                     )
                     console.log('✅ [ES] Elasticsearch laws completed')
@@ -1520,7 +1591,7 @@ export async function POST(req: Request) {
                     pastcase_data = await retrieveAndFilterData(
                       userQuery,
                       'dev_greek_court',
-                      MAX_PASTCASE_CHARACTERS,
+                      adjustedBudgets.maxCaseChars,
                       undefined
                     )
                     console.log('✅ [ES] Elasticsearch cases completed')
@@ -1785,12 +1856,19 @@ export async function POST(req: Request) {
 
             let secondSearchResults = null
 
-            if (
-              discoveredGaps.hasNewContent &&
-              discoveredGaps.confidenceScore > 0.4
-            ) {
+            // Pipeline config controls second-pass behavior:
+            // - forceSecondPassOnGaps: always do 2nd search if gaps found (temporal/multi_hop)
+            // - enableSecondPassSearch: allow 2nd search at all
+            const shouldDoSecondPass =
+              pipelineConfig.enableSecondPassSearch &&
+              ((discoveredGaps.hasNewContent &&
+                discoveredGaps.confidenceScore > 0.4) ||
+                (pipelineConfig.forceSecondPassOnGaps &&
+                  discoveredGaps.hasNewContent))
+
+            if (shouldDoSecondPass) {
               console.log(
-                '🔄 PHASE 4B: Starting second search with discovered content...'
+                `🔄 [${pipelineConfig.pipelineLabel}] PHASE 4B: Starting second search with discovered content...`
               )
 
               try {
@@ -1805,6 +1883,7 @@ export async function POST(req: Request) {
                   discoveredQuery: discoveredQuery,
                   newLaws: discoveredGaps.newLaws,
                   newKeywords: discoveredGaps.newKeywords,
+                  pipeline: pipelineConfig.pipelineLabel,
                 })
 
                 if (
@@ -1814,7 +1893,7 @@ export async function POST(req: Request) {
                   const secondLawSearch = await retrieveAndFilterData(
                     discoveredQuery,
                     'greek_laws_collection',
-                    MAX_LAW_CHARACTERS_V2 / 2,
+                    adjustedBudgets.maxLawChars / 2,
                     'voyage-3.5'
                   )
 
@@ -1838,7 +1917,7 @@ export async function POST(req: Request) {
                   const secondCaseSearch = await retrieveAndFilterData(
                     discoveredQuery,
                     'dev_greek_court',
-                    MAX_PASTCASE_CHARACTERS / 2,
+                    adjustedBudgets.maxCaseChars / 2,
                     undefined
                   )
 
@@ -1867,7 +1946,7 @@ export async function POST(req: Request) {
               }
             } else {
               console.log(
-                '⏭️ PHASE 4B: Skipping second search (low confidence or no gaps)'
+                `⏭️ [${pipelineConfig.pipelineLabel}] PHASE 4B: Skipping second search (pipeline: enableSecondPass=${pipelineConfig.enableSecondPassSearch}, gaps=${discoveredGaps.hasNewContent})`
               )
             }
 
@@ -1984,7 +2063,7 @@ export async function POST(req: Request) {
               try {
                 let modifiedQuery = userQuery
 
-                if (queryIntent.requiresCurrentLaw) {
+                if (queryIntent.requiresCurrentLaw || pipelineConfig.enableTemporalReranking) {
                   const currentYear = new Date().getFullYear()
                   const recentYearStart = currentYear - 1
 
@@ -2018,15 +2097,15 @@ export async function POST(req: Request) {
                 )
 
                 const dynamicTopK = Math.min(
-                  RERANKED_K,
+                  adjustedBudgets.rerankTopK,
                   combined_ai_versions.length,
                   Math.floor(maxTokensForDocs / 3000)
                 )
 
                 console.log(
-                  `🔄 Using dynamic topK: ${dynamicTopK} (budget allows ~${Math.floor(
+                  `🔄 [${pipelineConfig.pipelineLabel}] Using dynamic topK: ${dynamicTopK} (budget allows ~${Math.floor(
                     maxTokensForDocs / 3000
-                  )} docs)`
+                  )} docs, pipeline rerankK: ${adjustedBudgets.rerankTopK})`
                 )
 
                 const voyage_results: VoyageAI.RerankResponse =

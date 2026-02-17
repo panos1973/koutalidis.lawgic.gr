@@ -44,7 +44,7 @@ const getLocaleFromCookies = () => {
 
 async function createChatSummary(messages: any, locale: string) {
   if (!cachedLLMModel) {
-    cachedLLMModel = await getLLMModel('claude-3-haiku@20240307')
+    cachedLLMModel = await getLLMModel('claude-haiku-4-5-20251001')
   }
 
   const { object } = await generateObject({
@@ -453,7 +453,7 @@ export const createMeaningfulchatTitle = async (
 
   // Cache the LLM model
   if (!cachedLLMModel) {
-    cachedLLMModel = await getLLMModel('claude-3-haiku@20240307')
+    cachedLLMModel = await getLLMModel('claude-haiku-4-5-20251001')
   }
 
   const { object: title } = await generateObject({
@@ -868,7 +868,7 @@ export const generateReferenceName = async (
   },
   locale: string
 ) => {
-  const selectedModel = await getLLMModel('claude-3-haiku@20240307')
+  const selectedModel = await getLLMModel('claude-haiku-4-5-20251001')
 
   const { object } = await generateObject({
     model: selectedModel,

@@ -19,6 +19,7 @@ import { createPostgressVectorStore } from '@/app/[locale]/actions/tool_2_action
 import { extractContentFromUrl } from '@/app/[locale]/actions/library_actions'
 import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
 import { revalidatePath } from 'next/cache'
+import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
 
 // ====================
 // CONFIGURATION
@@ -244,8 +245,8 @@ export async function POST(req: Request) {
     })
 
     // Load the LLM model
-    const selectedModel = await getLLMModel('claude-sonnet-4-5-20250929')
-    console.log('Model loaded: claude-sonnet-4-5-20250929')
+    const selectedModel = await getLLMModel('claude-sonnet-4-6')
+    console.log('Model loaded: claude-sonnet-4-6')
 
     // Create vector store for case files
     const vectorStore = await createPostgressVectorStore(caseId)
@@ -301,10 +302,11 @@ export async function POST(req: Request) {
     }
 
     // Stream the response
-    const result = await streamText({
+    const result = streamText({
       model: selectedModel,
       system: systemPrompt,
       maxTokens: MAX_OUTPUT_TOKEN_SIZE,
+      providerOptions: getDefaultProviderOptions('high'),
       experimental_telemetry: telemetrySettings,
       ...(needsExtendedContext && {
         headers: {
