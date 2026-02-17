@@ -288,6 +288,7 @@ export async function POST(req: Request) {
       model: selectedModel,
       system: systemPrompt,
       maxTokens: maxTokens,
+      experimental_continueSteps: true,
       experimental_telemetry: telemetrySettings,
       providerOptions: getDefaultProviderOptions('high'),
       // Use 1M context only when needed for large cases
