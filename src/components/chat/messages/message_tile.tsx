@@ -534,9 +534,9 @@ const MessageTile: NextPage<Props> = ({
     <>
       <div
         className={cn(
-          'whitespace-pre-wrap text-sm mb-4 py-2 px-4 rounded-3xl',
+          'text-sm mb-4 py-2 px-4 rounded-3xl',
           {
-            'self-end bg-slate-200 max-w-fit md:max-w-[40svw] rounded-br-none overflow-clip':
+            'whitespace-pre-wrap self-end bg-slate-200 max-w-fit md:max-w-[40svw] rounded-br-none overflow-clip':
               m.role === 'user',
             'border border-slate-200 max-w-fit rounded-bl-none py-4':
               m.role === 'assistant',
