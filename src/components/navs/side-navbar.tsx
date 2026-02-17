@@ -66,7 +66,7 @@ const SideNavbar: NextPage<Props> = ({ subscriptionData }) => {
                 variant={isActive(path, `/lawbot`) ? 'Bulk' : 'Linear'}
               />
               <p
-                className={cn('text-xs text-center', {
+                className={cn('text-xs text-center [word-spacing:100vw]', {
                   'font-semibold': isActive(path, `/lawbot`),
                 })}
               >
@@ -91,7 +91,7 @@ const SideNavbar: NextPage<Props> = ({ subscriptionData }) => {
                 variant={isActive(path, `/case-research`) ? 'Bulk' : 'Linear'}
               />
               <p
-                className={cn('text-xs text-center', {
+                className={cn('text-xs text-center [word-spacing:100vw]', {
                   'font-semibold': isActive(path, `/case-research`),
                 })}
               >
@@ -118,7 +118,7 @@ const SideNavbar: NextPage<Props> = ({ subscriptionData }) => {
                 }
               />
               <p
-                className={cn('text-xs text-center', {
+                className={cn('text-xs text-center [word-spacing:100vw]', {
                   'font-semibold': isActive(path, `/document-creation`),
                 })}
               >
@@ -169,14 +169,14 @@ const SideNavbar: NextPage<Props> = ({ subscriptionData }) => {
               />
               <div className="flex flex-col items-center">
                 <p
-                  className={cn('text-xs text-center', {
+                  className={cn('text-xs text-center [word-spacing:100vw]', {
                     'font-semibold': isActive(path, `/contract`),
                   })}
                 >
                   {t('contracts')}
                 </p>
                 <p
-                  className={cn('text-[10px] text-center text-gray-500', {
+                  className={cn('text-[10px] text-center [word-spacing:100vw] text-gray-500', {
                     'font-semibold': isActive(path, `/contract`),
                   })}
                 >
@@ -204,7 +204,7 @@ const SideNavbar: NextPage<Props> = ({ subscriptionData }) => {
                 }
               />
               <p
-                className={cn('text-xs text-center', {
+                className={cn('text-xs text-center [word-spacing:100vw]', {
                   'font-semibold': isActive(path, `/compare-contract`),
                 })}
               >
@@ -228,7 +228,7 @@ const SideNavbar: NextPage<Props> = ({ subscriptionData }) => {
                 variant={isActive(path, `/vault`) ? 'Bulk' : 'Linear'}
               />
               <p
-                className={cn('text-xs text-center', {
+                className={cn('text-xs text-center [word-spacing:100vw]', {
                   'font-semibold': isActive(path, `/vault`),
                 })}
               >
@@ -254,7 +254,7 @@ const SideNavbar: NextPage<Props> = ({ subscriptionData }) => {
               />
 
               <p
-                className={cn('text-xs text-center', {
+                className={cn('text-xs text-center [word-spacing:100vw]', {
                   'font-semibold': isActive(path, `/library`),
                 })}
               >
