@@ -244,8 +244,8 @@ export async function POST(req: Request) {
     })
 
     // Load the LLM model
-    const selectedModel = await getLLMModel('claude-sonnet-4-5-20250929')
-    console.log('Model loaded: claude-sonnet-4-5-20250929')
+    const selectedModel = await getLLMModel('claude-sonnet-4-6')
+    console.log('Model loaded: claude-sonnet-4-6')
 
     // Create vector store for case files
     const vectorStore = await createPostgressVectorStore(caseId)

@@ -1433,7 +1433,7 @@ export async function POST(req: Request) {
   } else {
     console.log('🧠 Using CLAUDE')
 
-    const selectedModel = await getLLMModel('claude-sonnet-4-5-20250929')
+    const selectedModel = await getLLMModel('claude-sonnet-4-6')
     const telemetrySettings = AISDKExporter.getSettings({
       metadata: { userEmail, userQuery },
       runName: 'athena_api_v1',

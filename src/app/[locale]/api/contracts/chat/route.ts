@@ -192,7 +192,7 @@ export async function POST(req: Request) {
           (m.content.includes('Chapter') || m.content.includes('Κεφάλαιο'))
         ).length
 
-        const selectedModel = await getLLMModel('claude-sonnet-4-5-20250929')
+        const selectedModel = await getLLMModel('claude-sonnet-4-6')
         console.log('Model loaded')
 
         // Build enhanced system prompt with mode and contract count

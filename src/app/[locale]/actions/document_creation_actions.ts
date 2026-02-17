@@ -129,7 +129,7 @@ export const createMeaningfulDocumentCreationTitle = async (
   const locale = getLocaleFromCookies()
 
   if (!cachedLLMModel) {
-    cachedLLMModel = await getLLMModel('claude-3-haiku@20240307')
+    cachedLLMModel = await getLLMModel('claude-haiku-4-5-20251001')
   }
 
   const { object: title } = await generateObject({

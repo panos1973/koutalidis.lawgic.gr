@@ -215,7 +215,7 @@ export async function POST(req: Request) {
   try {
     console.log('POST request initiated')
 
-    const selectedModel = await getLLMModel('claude-sonnet-4-5-20250929')
+    const selectedModel = await getLLMModel('claude-sonnet-4-6')
     console.log('Model loaded')
 
     // Get results from Elasticsearch

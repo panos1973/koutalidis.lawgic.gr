@@ -46,7 +46,7 @@ ${userQuestion}
 ${assistantAnswer}`
 
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-latest',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 600, // Slightly more generous for 6-8 lines in Greek
       temperature: 0.1,
       system: LEGAL_SUMMARY_PROMPTS[locale],

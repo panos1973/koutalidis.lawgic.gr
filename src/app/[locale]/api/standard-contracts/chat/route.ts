@@ -33,10 +33,10 @@ export async function POST(req: Request) {
       .replace("{{USER_INSTRUCTIONS}}", formattedUserInstructions)
       .replace("{{CONTRACT_FIELDS}}", contractFields);
 
-    let selectedModel = await getLLMModel("claude-sonnet-4-5-20250929");
+    let selectedModel = await getLLMModel("claude-sonnet-4-6");
     const result = await streamText({
       model: wrapAISDKModel(selectedModel, { name: "contract" }),
-      // No headers needed - using claude-sonnet-4-5-20250929 with 200K default
+      // No headers needed - using claude-sonnet-4-6 with 200K default
       maxTokens: maxOutputTokenSize,
       system: systemPrompt,
       messages: convertToCoreMessages([...messages]),

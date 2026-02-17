@@ -200,7 +200,7 @@ export async function POST(req: Request) {
   try {
     console.log('POST request initiated')
 
-    const selectedModel = await getLLMModel('claude-sonnet-4-20250514')
+    const selectedModel = await getLLMModel('claude-sonnet-4-6')
     console.log('Model loaded')
 
     // Template prompt if selected
