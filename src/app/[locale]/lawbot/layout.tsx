@@ -35,12 +35,12 @@ export default function LawbotLayout({
   if (isKoutalidis) {
     return (
       <FocusModeProvider>
-        <div className="flex flex-col h-screen overflow-hidden">
+        <div className="flex flex-col h-screen overflow-hidden font-sans">
           <KoutalidisHeader />
           <div className="flex flex-1 overflow-hidden">
             <KoutalidisSidebar />
             {/* Chat history panel */}
-            <div className="w-[300px] border-r border-gray-100 bg-white flex flex-col shrink-0">
+            <div className="w-[300px] border-r border-gray-100 bg-white flex flex-col shrink-0 font-sans">
               <div className="px-3 py-3 border-b border-gray-100">
                 <CreateNewChat variant="outline" />
               </div>
@@ -51,7 +51,7 @@ export default function LawbotLayout({
               </div>
             </div>
             {/* Main content */}
-            <main className="flex-1 flex flex-col overflow-hidden">
+            <main className="flex-1 flex flex-col overflow-hidden font-sans">
               <BreadcrumbBar toolName="Νομική Έρευνα" />
               <div className="flex-1 overflow-y-auto">{children}</div>
             </main>
