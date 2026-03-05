@@ -147,15 +147,15 @@ const DocumentCreationLinks: NextPage<Props> = ({
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="min-w-1/2">
-            <p className="text-sm font-medium line-clamp-2">
+            <p className="text-xs font-medium line-clamp-2">
               {documentCreation.title}
             </p>
             {documentCreation.note && (
-              <p className="text-xs text-[#c2032f] my-1">
+              <p className="text-[11px] text-[#c2032f] my-1">
                 {documentCreation.note}
               </p>
             )}
-            <p className="text-xs text-slate-500">
+            <p className="text-[11px] text-slate-500">
               {formatDateToCustomFormat(documentCreation.createdAt!)}
             </p>
           </div>
@@ -172,7 +172,7 @@ const DocumentCreationLinks: NextPage<Props> = ({
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="min-w-1/2">
-            <p className="text-sm font-medium line-clamp-2">
+            <p className="text-xs font-medium line-clamp-2">
               {documentCreation.title}
             </p>
             <input
@@ -186,9 +186,9 @@ const DocumentCreationLinks: NextPage<Props> = ({
                   [documentCreation.id]: e.target.value,
                 }))
               }
-              className="w-full text-xs text-[#c2032f] placeholder:text-[#c2032f] border-b border-dashed border-[#c2032f] bg-transparent focus:outline-none focus:border-solid my-1"
+              className="w-full text-[11px] text-[#c2032f] placeholder:text-[#c2032f] border-b border-dashed border-[#c2032f] bg-transparent focus:outline-none focus:border-solid my-1"
             />
-            <p className="text-xs text-slate-500">
+            <p className="text-[11px] text-slate-500">
               {formatDateToCustomFormat(documentCreation.createdAt!)}
             </p>
           </div>

@@ -81,7 +81,7 @@ const ContractComparisonLinks = ({
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="min-w-1/2">
-            <p className="text-sm font-medium line-clamp-2">
+            <p className="text-xs font-medium line-clamp-2">
               {comparison.title || 'Untitled Comparison'}
             </p>
           </div>

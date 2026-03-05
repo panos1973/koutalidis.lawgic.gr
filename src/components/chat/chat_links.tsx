@@ -125,11 +125,11 @@ const ChatLinks: NextPage<Props> = ({ chats, chatHistoryTranslations }) => {
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="min-w-1/2">
-            <p className="text-base font-medium line-clamp-2">{chat.title}</p>
+            <p className="text-xs font-medium line-clamp-2">{chat.title}</p>
             {chat.note && (
-              <p className="text-sm text-[#c2032f] my-1">{chat.note}</p>
+              <p className="text-[11px] text-[#c2032f] my-1">{chat.note}</p>
             )}
-            <p className="text-sm text-slate-500">
+            <p className="text-[11px] text-slate-500">
               {formatDateToCustomFormat(chat.createdAt!)}
             </p>
           </div>
@@ -146,7 +146,7 @@ const ChatLinks: NextPage<Props> = ({ chats, chatHistoryTranslations }) => {
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="min-w-1/2">
-            <p className="text-base font-medium line-clamp-2">{chat.title}</p>
+            <p className="text-xs font-medium line-clamp-2">{chat.title}</p>
             <input
               type="text"
               maxLength={80}
@@ -158,9 +158,9 @@ const ChatLinks: NextPage<Props> = ({ chats, chatHistoryTranslations }) => {
                   [chat.id]: e.target.value,
                 }))
               }
-              className="w-full text-sm text-[#c2032f] placeholder:text-[#c2032f] border-b border-dashed border-[#c2032f] bg-transparent focus:outline-none focus:border-solid my-1"
+              className="w-full text-[11px] text-[#c2032f] placeholder:text-[#c2032f] border-b border-dashed border-[#c2032f] bg-transparent focus:outline-none focus:border-solid my-1"
             />
-            <p className="text-sm text-slate-500">
+            <p className="text-[11px] text-slate-500">
               {formatDateToCustomFormat(chat.createdAt!)}
             </p>
           </div>
@@ -278,7 +278,7 @@ const ChatLinks: NextPage<Props> = ({ chats, chatHistoryTranslations }) => {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
                               <DropdownMenuItem
-                                className="text-sm"
+                                className="text-xs"
                                 onClick={() => {
                                   toast.promise(deleteChat(chat.id), {
                                     loading: `${chatHistoryTranslations.deleteToastLoading}...`,
