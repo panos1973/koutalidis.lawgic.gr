@@ -1,5 +1,5 @@
 /**
- * Function to decode escaped hexadecimal sequences in a string if present.
+ * Function to decode escaped hexadecimal sequences in a string if present. 
  * @param {string} inputText - The text that may contain escaped sequences.
  * @returns {string} - The processed text with proper characters.
  */
