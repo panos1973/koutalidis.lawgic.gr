@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocale } from 'next-intl'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -12,7 +12,13 @@ import { PracticeIcon } from '../icons/PracticeIcons'
 export function GeneralToolsSection() {
   const locale = useLocale()
   const pathname = usePathname()
-  const [expanded, setExpanded] = useState(false)
+  // Auto-expand when any general tool route is active
+  const isOnGeneralTool = GENERAL_TOOLS.some((tool) => pathname.includes(tool.route))
+  const [expanded, setExpanded] = useState(isOnGeneralTool)
+
+  useEffect(() => {
+    if (isOnGeneralTool) setExpanded(true)
+  }, [isOnGeneralTool])
 
   return (
     <div className="px-3 py-2">

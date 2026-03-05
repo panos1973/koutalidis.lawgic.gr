@@ -116,10 +116,10 @@ const StandardContractChatLinks: NextPage<Props> = ({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="min-w-1/2">
-                        <p className="text-sm font-medium line-clamp-2">
+                        <p className="text-xs font-medium line-clamp-2">
                           {contract.title}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-[11px] text-slate-500">
                           {relativeTimeFromDates(contract.createdAt!)}
                         </p>
                       </div>
