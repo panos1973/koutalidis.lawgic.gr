@@ -758,5 +758,62 @@
     "legalMemo": "Legal Memorandum",
     "complianceReport": "Compliance Report",
     "legalAnalysis": "Legal Analysis"
+  },
+  "koutalidis": {
+    "practiceTools": "Practice Tools",
+    "projects": "Projects",
+    "newProject": "New Project",
+    "projectTools": "Project Tools",
+    "generalTools": "General Tools",
+    "filesAndDocs": "Files & Documents",
+    "newConversation": "New Conversation",
+    "history": "History",
+    "clear": "Clear",
+    "collapse": "Collapse",
+    "focus": "Focus",
+    "exitFocus": "Exit Focus",
+    "hideAll": "Hide sidebar & history",
+    "restorePanels": "Restore panels",
+    "search": "Search...",
+    "practiceAreas": {
+      "banking": "Banking & Finance",
+      "ma": "M&A",
+      "energy": "Energy",
+      "litigation": "Litigation",
+      "digital": "Digital / TMT",
+      "tax": "Tax",
+      "realestate": "Real Estate"
+    },
+    "toolCategories": {
+      "documentGeneration": "Document Generation",
+      "documentReview": "Document Review",
+      "translation": "Translation",
+      "dueDiligence": "Due Diligence",
+      "transactionDocs": "Transaction Documents"
+    },
+    "projectModal": {
+      "title": "New Project",
+      "name": "Project Name",
+      "client": "Client",
+      "description": "Description",
+      "selectAreas": "Select Practice Areas",
+      "create": "Create",
+      "cancel": "Cancel",
+      "creating": "Creating..."
+    },
+    "projectPage": {
+      "title": "Projects",
+      "subtitle": "Manage your legal projects and matters",
+      "noProjects": "No projects yet",
+      "createFirst": "Create your first project to get started",
+      "loading": "Loading projects..."
+    },
+    "chat": {
+      "startConversation": "Start a conversation",
+      "startMessage": "Ask questions or upload documents to begin working with this tool.",
+      "thinking": "Thinking...",
+      "placeholder": "Type your message...",
+      "cautionMessage": "AI can make mistakes. Review important information."
+    }
   }
 }

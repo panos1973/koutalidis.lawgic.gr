@@ -44,6 +44,25 @@ export default clerkMiddleware(async (auth, req) => {
 
   const intlMiddleware = createIntlMiddleware(routing);
 
+  // Detect Koutalidis tenant from hostname
+  const hostname = req.headers.get("host") || "";
+  const isKoutalidis = hostname.includes("koutalidis.lawgic.gr") ||
+    process.env.NEXT_PUBLIC_TENANT_ID === "koutalidis";
+
+  // For Koutalidis, redirect root to projects view
+  if (isKoutalidis) {
+    const pathname = req.nextUrl.pathname;
+    if (
+      pathname === `/${locale}` ||
+      pathname === "/" ||
+      pathname === `/${locale}/` ||
+      pathname === `/${locale}/lawbot`
+    ) {
+      const projectsUrl = new URL(`/${locale}/projects`, req.url);
+      return NextResponse.redirect(projectsUrl);
+    }
+  }
+
   if (!isPublicRoute(req)) {
     if (!userId) {
       const signInUrl = new URL(`/${locale}/sign-in`, req.url);
