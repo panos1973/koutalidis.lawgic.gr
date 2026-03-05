@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import Link from 'next/link'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -11,32 +11,60 @@ import {
 } from '@/lib/koutalidis/practice-areas'
 import { PracticeIcon } from '../icons/PracticeIcons'
 
+const AREAS_STORAGE_KEY = 'koutalidis_expanded_areas'
+const CATEGORIES_STORAGE_KEY = 'koutalidis_expanded_categories'
+
+function loadSet(key: string, defaultAll?: string[]): Set<string> {
+  if (typeof window === 'undefined') return new Set(defaultAll ?? [])
+  const stored = localStorage.getItem(key)
+  if (stored === null) return new Set(defaultAll ?? [])
+  try {
+    return new Set(JSON.parse(stored) as string[])
+  } catch {
+    return new Set(defaultAll ?? [])
+  }
+}
+
+function saveSet(key: string, set: Set<string>) {
+  localStorage.setItem(key, JSON.stringify([...set]))
+}
+
 export function ToolTree() {
   const locale = useLocale()
-  const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set())
+
+  // Default: all practice areas expanded
+  const [expandedAreas, setExpandedAreas] = useState<Set<string>>(
+    () => loadSet(AREAS_STORAGE_KEY, PRACTICE_AREAS.map((a) => a.id))
+  )
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set()
+    () => loadSet(CATEGORIES_STORAGE_KEY)
   )
 
-  const toggleArea = (areaId: string) => {
-    const next = new Set(expandedAreas)
-    if (next.has(areaId)) {
-      next.delete(areaId)
-    } else {
-      next.add(areaId)
-    }
-    setExpandedAreas(next)
-  }
+  const toggleArea = useCallback((areaId: string) => {
+    setExpandedAreas((prev) => {
+      const next = new Set(prev)
+      if (next.has(areaId)) {
+        next.delete(areaId)
+      } else {
+        next.add(areaId)
+      }
+      saveSet(AREAS_STORAGE_KEY, next)
+      return next
+    })
+  }, [])
 
-  const toggleCategory = (key: string) => {
-    const next = new Set(expandedCategories)
-    if (next.has(key)) {
-      next.delete(key)
-    } else {
-      next.add(key)
-    }
-    setExpandedCategories(next)
-  }
+  const toggleCategory = useCallback((key: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      saveSet(CATEGORIES_STORAGE_KEY, next)
+      return next
+    })
+  }, [])
 
   return (
     <div className="px-3 py-2">
