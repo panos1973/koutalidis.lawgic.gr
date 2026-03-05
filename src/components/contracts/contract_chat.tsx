@@ -953,10 +953,10 @@ const ContractChat: NextPage<Props> = ({
 
               {messages.length === 0 && (
                 <div className="mb-4">
-                  <p className={`font-bold text-lg text-center`}>
+                  <p className={`font-semibold text-sm text-center font-sans`}>
                     {tHome('chatTitle')}
                   </p>
-                  <p className={`font-zinc-500 text-center mt-1 font-light`}>
+                  <p className={`text-xs text-gray-500 text-center mt-1 font-light font-sans`}>
                     {tHome('chatDescription')}
                   </p>
                 </div>
