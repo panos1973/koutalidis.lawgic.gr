@@ -55,8 +55,7 @@ export default clerkMiddleware(async (auth, req) => {
     if (
       pathname === `/${locale}` ||
       pathname === "/" ||
-      pathname === `/${locale}/` ||
-      pathname === `/${locale}/lawbot`
+      pathname === `/${locale}/`
     ) {
       const projectsUrl = new URL(`/${locale}/projects`, req.url);
       return NextResponse.redirect(projectsUrl);
