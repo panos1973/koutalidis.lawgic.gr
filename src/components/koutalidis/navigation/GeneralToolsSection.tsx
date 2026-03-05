@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -9,21 +9,36 @@ import { cn } from '@/lib/utils'
 import { GENERAL_TOOLS } from '@/lib/koutalidis/practice-areas'
 import { PracticeIcon } from '../icons/PracticeIcons'
 
+const STORAGE_KEY = 'koutalidis_general_tools_expanded'
+
 export function GeneralToolsSection() {
   const locale = useLocale()
   const pathname = usePathname()
-  // Auto-expand when any general tool route is active
   const isOnGeneralTool = GENERAL_TOOLS.some((tool) => pathname.includes(tool.route))
-  const [expanded, setExpanded] = useState(isOnGeneralTool)
+
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const stored = localStorage.getItem(STORAGE_KEY)
+    // Default to expanded; only collapse if user explicitly collapsed
+    return stored === null ? true : stored === 'true'
+  })
 
   useEffect(() => {
     if (isOnGeneralTool) setExpanded(true)
   }, [isOnGeneralTool])
 
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev
+      localStorage.setItem(STORAGE_KEY, String(next))
+      return next
+    })
+  }, [])
+
   return (
     <div className="px-3 py-2">
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={toggleExpanded}
         className="flex items-center justify-between w-full text-xs font-medium text-gray-500 uppercase tracking-wider hover:text-gray-700 transition-colors"
       >
         <span>General Tools</span>
