@@ -744,5 +744,62 @@
       "complianceReport": "Αναφορά Συμμόρφωσης",
       "legalAnalysis": "Νομική Ανάλυση"
     }
+  },
+  "koutalidis": {
+    "practiceTools": "Εργαλεία Πρακτικής",
+    "projects": "Υποθέσεις",
+    "newProject": "Νέα Υπόθεση",
+    "projectTools": "Εργαλεία Υπόθεσης",
+    "generalTools": "Γενικά Εργαλεία",
+    "filesAndDocs": "Αρχεία & Έγγραφα",
+    "newConversation": "Νέα Συνομιλία",
+    "history": "Ιστορικό",
+    "clear": "Διαγραφή",
+    "collapse": "Σύμπτυξη",
+    "focus": "Εστίαση",
+    "exitFocus": "Έξοδος Εστίασης",
+    "hideAll": "Απόκρυψη πλευρικών πάνελ",
+    "restorePanels": "Επαναφορά πάνελ",
+    "search": "Αναζήτηση...",
+    "practiceAreas": {
+      "banking": "Τραπεζικό Δίκαιο",
+      "ma": "Συγχωνεύσεις & Εξαγορές",
+      "energy": "Ενέργεια",
+      "litigation": "Δικαστηριακό",
+      "digital": "Ψηφιακό / TMT",
+      "tax": "Φορολογικό",
+      "realestate": "Ακίνητα"
+    },
+    "toolCategories": {
+      "documentGeneration": "Δημιουργία Εγγράφων",
+      "documentReview": "Έλεγχος Εγγράφων",
+      "translation": "Μετάφραση",
+      "dueDiligence": "Due Diligence",
+      "transactionDocs": "Έγγραφα Συναλλαγής"
+    },
+    "projectModal": {
+      "title": "Νέα Υπόθεση",
+      "name": "Όνομα Υπόθεσης",
+      "client": "Πελάτης",
+      "description": "Περιγραφή",
+      "selectAreas": "Επιλέξτε Τομείς Πρακτικής",
+      "create": "Δημιουργία",
+      "cancel": "Ακύρωση",
+      "creating": "Δημιουργία..."
+    },
+    "projectPage": {
+      "title": "Υποθέσεις",
+      "subtitle": "Διαχείριση νομικών υποθέσεων και θεμάτων",
+      "noProjects": "Δεν υπάρχουν υποθέσεις",
+      "createFirst": "Δημιουργήστε την πρώτη σας υπόθεση για να ξεκινήσετε",
+      "loading": "Φόρτωση υποθέσεων..."
+    },
+    "chat": {
+      "startConversation": "Ξεκινήστε μια συνομιλία",
+      "startMessage": "Κάντε ερωτήσεις ή ανεβάστε έγγραφα για να ξεκινήσετε.",
+      "thinking": "Σκέφτομαι...",
+      "placeholder": "Πληκτρολογήστε το μήνυμά σας...",
+      "cautionMessage": "Η ΤΝ μπορεί να κάνει λάθη. Ελέγξτε τις σημαντικές πληροφορίες."
+    }
   }
 }
