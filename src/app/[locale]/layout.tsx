@@ -14,7 +14,7 @@ import { elGR, enUS } from "@clerk/localizations";
 import { checkUsageLimits } from "./actions/subscription";
 import { headers } from "next/headers";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin", "greek"], variable: "--font-inter" });
 
 function isKoutalidisTenant(): boolean {
   const headersList = headers();
@@ -53,7 +53,7 @@ export default async function RootLayout({
       afterSignOutUrl={`/${locale}/sign-in`}
     >
       <html lang={locale} suppressHydrationWarning>
-        <body className={`${inter.className}  antialiased`}>
+        <body className={`${inter.variable} ${inter.className} antialiased`}>
           <NextIntlClientProvider messages={messages}>
             <ThemeProvider
             //   attribute='class'

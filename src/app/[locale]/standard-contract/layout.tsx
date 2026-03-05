@@ -1,21 +1,61 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
+import { headers } from 'next/headers';
 import ChatHistoryLoader from '@/components/chat/chat_history_loader';
-import { getTranslations } from 'next-intl/server';
 import CreateNewStandardContractChat from '@/components/standard-contracts/create_new_standard_contract_chat';
 import StandardContractChatHistory from '@/components/standard-contracts/standard_contract_chat_history';
+import { FocusModeProvider } from '@/components/koutalidis/layout/FocusModeProvider';
+import { KoutalidisHeader } from '@/components/koutalidis/layout/KoutalidisHeader';
+import { KoutalidisSidebar } from '@/components/koutalidis/layout/KoutalidisSidebar';
+import { BreadcrumbBar } from '@/components/koutalidis/layout/BreadcrumbBar';
+
+function isKoutalidisTenant(): boolean {
+  const headersList = headers();
+  const host = headersList.get('host') || '';
+  return (
+    host.includes('koutalidis.lawgic.gr') ||
+    process.env.NEXT_PUBLIC_TENANT_ID === 'koutalidis'
+  );
+}
 
 export const metadata: Metadata = {
   title: 'Lawgic | Standard Contracts',
   description: 'Standard Contracts',
 };
 
-export default async function StandardContractsLayout({
+export default function StandardContractsLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const t = await getTranslations('standardContract.home');
+  const isKoutalidis = isKoutalidisTenant();
+
+  if (isKoutalidis) {
+    return (
+      <FocusModeProvider>
+        <div className="flex flex-col h-screen overflow-hidden">
+          <KoutalidisHeader />
+          <div className="flex flex-1 overflow-hidden">
+            <KoutalidisSidebar />
+            <div className="w-[300px] border-r border-gray-100 bg-white flex flex-col shrink-0">
+              <div className="px-3 py-3 border-b border-gray-100">
+                <CreateNewStandardContractChat variant="outline" />
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <Suspense fallback={<ChatHistoryLoader />}>
+                  <StandardContractChatHistory />
+                </Suspense>
+              </div>
+            </div>
+            <main className="flex-1 flex flex-col overflow-hidden">
+              <BreadcrumbBar toolName="Τυποποιημένες Συμβάσεις" />
+              <div className="flex-1 overflow-y-auto">{children}</div>
+            </main>
+          </div>
+        </div>
+      </FocusModeProvider>
+    );
+  }
 
   return (
     <div className='flex flex-col md:flex-row w-full'>

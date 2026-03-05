@@ -1,13 +1,23 @@
 import type { Metadata } from "next";
-import ContractsTopNav from "@/components/contracts/top_nav";
-import CreateNewContractChat from "@/components/contracts/create_new_chat";
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import ChatHistoryLoader from "@/components/chat/chat_history_loader";
 import ContractChatHistory from "@/components/contracts/contract_chat_history";
-import { getTranslations } from "next-intl/server";
+import CreateNewContractChat from "@/components/contracts/create_new_chat";
 import ContractsMobileTopNav from "@/components/contracts/mobile_top_nav";
-import ContractHistoryLoader from "@/components/contracts/messages/history_loader";
-import { cookies } from "next/headers";
+import { FocusModeProvider } from "@/components/koutalidis/layout/FocusModeProvider";
+import { KoutalidisHeader } from "@/components/koutalidis/layout/KoutalidisHeader";
+import { KoutalidisSidebar } from "@/components/koutalidis/layout/KoutalidisSidebar";
+import { BreadcrumbBar } from "@/components/koutalidis/layout/BreadcrumbBar";
+
+function isKoutalidisTenant(): boolean {
+  const headersList = headers();
+  const host = headersList.get("host") || "";
+  return (
+    host.includes("koutalidis.lawgic.gr") ||
+    process.env.NEXT_PUBLIC_TENANT_ID === "koutalidis"
+  );
+}
 
 export const metadata: Metadata = {
   title: "Lawgic | Contracts",
@@ -19,17 +29,41 @@ export default function ContractsLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const isKoutalidis = isKoutalidisTenant();
+
+  if (isKoutalidis) {
+    return (
+      <FocusModeProvider>
+        <div className="flex flex-col h-screen overflow-hidden">
+          <KoutalidisHeader />
+          <div className="flex flex-1 overflow-hidden">
+            <KoutalidisSidebar />
+            <div className="w-[300px] border-r border-gray-100 bg-white flex flex-col shrink-0">
+              <div className="px-3 py-3 border-b border-gray-100">
+                <CreateNewContractChat variant="outline" />
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <Suspense fallback={<ChatHistoryLoader />}>
+                  <ContractChatHistory />
+                </Suspense>
+              </div>
+            </div>
+            <main className="flex-1 flex flex-col overflow-hidden">
+              <BreadcrumbBar toolName="Σύμβαση Βήμα-Βήμα" />
+              <div className="flex-1 overflow-y-auto">{children}</div>
+            </main>
+          </div>
+        </div>
+      </FocusModeProvider>
+    );
+  }
+
   return (
     <div className="flex flex-col md:flex-row w-full">
       <div className="hidden md:block w-[15%] md:w-[20%] border-r border-slate-100 h-[93svh] bg-slate-50 py-4 overflow-y-hidden">
         <div className="px-2 pb-4">
           <CreateNewContractChat variant="outline" />
         </div>
-        {/* <div className="flex mb-4 justify-between items-center px-2">
-          <p className="text-xs font-semibold tracking-wide uppercase text-slate-600">
-            {t('history')}
-          </p>
-        </div> */}
         <Suspense fallback={<ChatHistoryLoader />}>
           <ContractChatHistory />
         </Suspense>
