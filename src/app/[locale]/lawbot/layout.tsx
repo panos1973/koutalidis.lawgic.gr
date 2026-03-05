@@ -40,7 +40,7 @@ export default function LawbotLayout({
           <div className="flex flex-1 overflow-hidden">
             <KoutalidisSidebar />
             {/* Chat history panel */}
-            <div className="w-[260px] border-r border-gray-100 bg-white flex flex-col shrink-0">
+            <div className="w-[300px] border-r border-gray-100 bg-white flex flex-col shrink-0">
               <div className="px-3 py-3 border-b border-gray-100">
                 <CreateNewChat variant="outline" />
               </div>
