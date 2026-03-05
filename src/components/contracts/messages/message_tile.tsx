@@ -149,7 +149,7 @@ const MessageTile: NextPage<Props> = ({
 
     return (
       <>
-        <div className="prose prose-sm max-w-none">
+        <div className="prose prose-sm max-w-none font-sans">
           <Markdown
             options={{
               overrides: {
@@ -280,7 +280,7 @@ const MessageTile: NextPage<Props> = ({
 
   return (
     <div
-      className={cn('text-sm mb-6 py-2 px-4 rounded-3xl', {
+      className={cn('font-sans text-sm mb-6 py-2 px-4 rounded-3xl', {
         'whitespace-pre-wrap self-end bg-slate-200  max-w-fit md:max-w-[40svw] rounded-br-none overflow-clip':
           m.role === 'user',
         'border border-slate-200 max-w-fit rounded-bl-none py-6':

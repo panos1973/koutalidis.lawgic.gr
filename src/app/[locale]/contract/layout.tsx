@@ -34,11 +34,11 @@ export default function ContractsLayout({
   if (isKoutalidis) {
     return (
       <FocusModeProvider>
-        <div className="flex flex-col h-screen overflow-hidden">
+        <div className="flex flex-col h-screen overflow-hidden font-sans">
           <KoutalidisHeader />
           <div className="flex flex-1 overflow-hidden">
             <KoutalidisSidebar />
-            <div className="w-[300px] border-r border-gray-100 bg-white flex flex-col shrink-0">
+            <div className="w-[300px] border-r border-gray-100 bg-white flex flex-col shrink-0 font-sans">
               <div className="px-3 py-3 border-b border-gray-100">
                 <CreateNewContractChat variant="outline" />
               </div>
@@ -48,7 +48,7 @@ export default function ContractsLayout({
                 </Suspense>
               </div>
             </div>
-            <main className="flex-1 flex flex-col overflow-hidden">
+            <main className="flex-1 flex flex-col overflow-hidden font-sans">
               <BreadcrumbBar toolName="Σύμβαση Βήμα-Βήμα" />
               <div className="flex-1 overflow-y-auto">{children}</div>
             </main>
