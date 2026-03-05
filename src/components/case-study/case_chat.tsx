@@ -696,10 +696,10 @@ const CaseChat: NextPage<Props> = ({
         {!messages.length && (
           <div className="w-[70%] flex flex-col justify-center items-center">
             <div className="mb-4">
-              <p className={`font-bold text-lg text-center`}>
+              <p className={`font-semibold text-sm text-center font-sans`}>
                 {t('chatTitle')}
               </p>
-              <p className={`font-zinc-500 text-center mt-1 font-light`}>
+              <p className={`text-xs text-gray-500 text-center mt-1 font-light font-sans`}>
                 {t('chatDescription')}
               </p>
             </div>

@@ -719,8 +719,8 @@ const Chat: NextPage<Props> = ({
 
         {messages.length === 0 && (
           <div className="mb-4 w-[75%]">
-            <p className={`font-bold text-lg text-center`}>{t('chatTitle')}</p>
-            <p className={`font-zinc-500 text-center mt-1 font-light`}>
+            <p className={`font-semibold text-sm text-center font-sans`}>{t('chatTitle')}</p>
+            <p className={`text-xs text-gray-500 text-center mt-1 font-light font-sans`}>
               {t('chatDescription')}
             </p>
           </div>
