@@ -46,7 +46,7 @@ export const GENERAL_TOOL_ROUTES: Record<string, string> = {
   'case-research': '/case-research',
   'document-creation': '/document-creation',
   contract: '/contract',
-  'standard-contract': '/standard-contract',
+  // 'standard-contract': '/standard-contract', // Hidden for now
   'compare-contract': '/compare-contract',
   lawbot: '/lawbot',
 }
@@ -312,11 +312,11 @@ export const GENERAL_TOOLS = [
     icon: 'convertShape',
     route: '/compare-contract',
   },
-  {
-    id: 'standard-contract',
-    name: 'Standard Contracts',
-    nameEl: 'Τυποποιημένες Συμβάσεις',
-    icon: 'noteAdd',
-    route: '/standard-contract',
-  },
+  // {
+  //   id: 'standard-contract',
+  //   name: 'Standard Contracts',
+  //   nameEl: 'Τυποποιημένες Συμβάσεις',
+  //   icon: 'noteAdd',
+  //   route: '/standard-contract',
+  // },
 ]
