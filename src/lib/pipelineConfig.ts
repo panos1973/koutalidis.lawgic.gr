@@ -291,9 +291,7 @@ export function getPipelinePromptSuffix(
  * Requires @ai-sdk/anthropic >= 1.x for full support.
  * With older versions, these options are safely ignored.
  */
-export function getAnthropicProviderOptions(config: PipelineConfig): {
-  anthropic: Record<string, unknown>
-} {
+export function getAnthropicProviderOptions(config: PipelineConfig) {
   const options: Record<string, unknown> = {}
 
   if (config.enableAdaptiveThinking) {
@@ -309,9 +307,7 @@ export function getAnthropicProviderOptions(config: PipelineConfig): {
  * Builds provider options with a specific effort level (for non-pipeline routes).
  * Use this for tool routes that don't have the query classifier.
  */
-export function getDefaultProviderOptions(effort: EffortLevel = 'medium'): {
-  anthropic: Record<string, unknown>
-} {
+export function getDefaultProviderOptions(effort: EffortLevel = 'medium') {
   return {
     anthropic: {
       thinking: { type: 'adaptive' },
