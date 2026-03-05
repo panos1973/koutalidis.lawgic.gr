@@ -292,15 +292,12 @@ export function getPipelinePromptSuffix(
  * With older versions, these options are safely ignored.
  */
 export function getAnthropicProviderOptions(config: PipelineConfig) {
-  const options: Record<string, unknown> = {}
-
-  if (config.enableAdaptiveThinking) {
-    options.thinking = { type: 'adaptive' }
+  return {
+    anthropic: {
+      ...(config.enableAdaptiveThinking && { thinking: { type: 'adaptive' as const } }),
+      effort: config.effort,
+    },
   }
-
-  options.effort = config.effort
-
-  return { anthropic: options }
 }
 
 /**
