@@ -39,7 +39,7 @@ export function GeneralToolsSection() {
     <div className="px-3 py-2">
       <button
         onClick={toggleExpanded}
-        className="flex items-center justify-between w-full text-xs font-medium text-gray-500 uppercase tracking-wider hover:text-gray-700 transition-colors"
+        className="flex items-center justify-between w-full text-xs font-medium text-gray-700 uppercase tracking-wider hover:text-gray-900 transition-colors"
       >
         <span>General Tools</span>
         {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}

@@ -41,7 +41,7 @@ export function ProjectSelector() {
       {/* Section header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center justify-between w-full text-xs font-medium text-gray-500 uppercase tracking-wider hover:text-gray-700 transition-colors"
+        className="flex items-center justify-between w-full text-xs font-medium text-gray-700 uppercase tracking-wider hover:text-gray-900 transition-colors"
       >
         <div className="flex items-center gap-1.5">
           <FolderKanban size={13} />
