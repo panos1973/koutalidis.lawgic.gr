@@ -12,7 +12,7 @@ import {
 import { PracticeIcon } from '../icons/PracticeIcons'
 
 const AREAS_STORAGE_KEY = 'koutalidis_expanded_areas'
-const CATEGORIES_STORAGE_KEY = 'koutalidis_expanded_categories'
+// Categories always start collapsed — no persistence
 
 function loadSet(key: string, defaultAll?: string[]): Set<string> {
   if (typeof window === 'undefined') return new Set(defaultAll ?? [])
@@ -36,8 +36,9 @@ export function ToolTree() {
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(
     () => loadSet(AREAS_STORAGE_KEY, PRACTICE_AREAS.map((a) => a.id))
   )
+  // Categories always start collapsed; user can expand during session
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    () => loadSet(CATEGORIES_STORAGE_KEY)
+    new Set()
   )
 
   const toggleArea = useCallback((areaId: string) => {
@@ -61,7 +62,6 @@ export function ToolTree() {
       } else {
         next.add(key)
       }
-      saveSet(CATEGORIES_STORAGE_KEY, next)
       return next
     })
   }, [])
