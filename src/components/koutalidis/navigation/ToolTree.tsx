@@ -11,30 +11,14 @@ import {
 } from '@/lib/koutalidis/practice-areas'
 import { PracticeIcon } from '../icons/PracticeIcons'
 
-const AREAS_STORAGE_KEY = 'koutalidis_expanded_areas'
-// Categories always start collapsed — no persistence
-
-function loadSet(key: string, defaultAll?: string[]): Set<string> {
-  if (typeof window === 'undefined') return new Set(defaultAll ?? [])
-  const stored = localStorage.getItem(key)
-  if (stored === null) return new Set(defaultAll ?? [])
-  try {
-    return new Set(JSON.parse(stored) as string[])
-  } catch {
-    return new Set(defaultAll ?? [])
-  }
-}
-
-function saveSet(key: string, set: Set<string>) {
-  localStorage.setItem(key, JSON.stringify([...set]))
-}
+// Both areas and categories always start collapsed; expand only on user click
 
 export function ToolTree() {
   const locale = useLocale()
 
-  // Default: all practice areas expanded
+  // Default: all practice areas collapsed
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(
-    () => loadSet(AREAS_STORAGE_KEY, PRACTICE_AREAS.map((a) => a.id))
+    new Set()
   )
   // Categories always start collapsed; user can expand during session
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
@@ -49,7 +33,6 @@ export function ToolTree() {
       } else {
         next.add(areaId)
       }
-      saveSet(AREAS_STORAGE_KEY, next)
       return next
     })
   }, [])
@@ -68,7 +51,7 @@ export function ToolTree() {
 
   return (
     <div className="px-3 py-2">
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+      <p className="text-xs font-medium text-gray-700 uppercase tracking-wider mb-2">
         Practice Tools
       </p>
 

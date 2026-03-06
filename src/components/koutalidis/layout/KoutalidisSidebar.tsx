@@ -25,7 +25,7 @@ export function KoutalidisSidebar() {
       {/* Collapse toggle */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
         {!sidebarCollapsed && (
-          <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <span className="text-xs font-medium text-gray-700 uppercase tracking-wider">
             Navigation
           </span>
         )}
