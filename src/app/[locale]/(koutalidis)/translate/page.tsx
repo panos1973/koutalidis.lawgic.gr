@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Copy,
   Download,
+  FileText,
   Languages,
   Loader2,
   ScanSearch,
@@ -71,6 +72,11 @@ const labels = {
     charCount: 'χαρακτήρες',
     translationResult: 'Αποτέλεσμα Μετάφρασης',
     newTranslation: 'Νέα Μετάφραση',
+    dropFileHere: 'Αφήστε το αρχείο εδώ',
+    extractingText: 'Εξαγωγή κειμένου...',
+    fileLoaded: 'Φορτώθηκε από',
+    unsupportedFile: 'Μη υποστηριζόμενος τύπος αρχείου. Υποστηρίζονται: TXT, DOCX, DOC, PDF',
+    extractionFailed: 'Αποτυχία εξαγωγής κειμένου από το αρχείο.',
   },
   en: {
     title: 'Legal Translation',
@@ -105,6 +111,11 @@ const labels = {
     charCount: 'characters',
     translationResult: 'Translation Result',
     newTranslation: 'New Translation',
+    dropFileHere: 'Drop file here',
+    extractingText: 'Extracting text...',
+    fileLoaded: 'Loaded from',
+    unsupportedFile: 'Unsupported file type. Supported: TXT, DOCX, DOC, PDF',
+    extractionFailed: 'Failed to extract text from file.',
   },
 }
 
@@ -139,8 +150,12 @@ export default function TranslatePage() {
   } | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isExtractingFile, setIsExtractingFile] = useState(false)
+  const [loadedFileName, setLoadedFileName] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
 
   // Auto-detect language when text changes (debounced)
   useEffect(() => {
@@ -182,27 +197,86 @@ export default function TranslatePage() {
     setResult(null)
   }
 
-  // Handle file upload
+  // Extract text from a file — always uses server API for binary formats
+  const extractTextFromFile = useCallback(async (file: File) => {
+    const name = file.name.toLowerCase()
+    const isTxt = name.endsWith('.txt')
+    const isBinary = name.endsWith('.docx') || name.endsWith('.doc') || name.endsWith('.pdf')
+
+    if (!isTxt && !isBinary) {
+      setError(t.unsupportedFile)
+      return
+    }
+
+    setIsExtractingFile(true)
+    setError(null)
+
+    try {
+      // ALL file types go through the server API for reliable extraction
+      // (even .txt for consistency, but especially DOCX/DOC/PDF which are binary)
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch(`/${locale}/api/translate/extract-text`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || t.extractionFailed)
+      }
+
+      const data = await res.json()
+      if (!data.text || typeof data.text !== 'string') {
+        throw new Error(t.extractionFailed)
+      }
+
+      setSourceText(data.text)
+      setLoadedFileName(data.fileName || file.name)
+      setResult(null)
+    } catch (err) {
+      console.error('File extraction error:', err)
+      setError(err instanceof Error ? err.message : t.extractionFailed)
+    } finally {
+      setIsExtractingFile(false)
+    }
+  }, [locale, t])
+
+  // Handle file input change
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
-    try {
-      if (file.name.endsWith('.txt')) {
-        const text = await file.text()
-        setSourceText(text)
-      } else {
-        // For PDF/DOCX, read as text (basic extraction)
-        const text = await file.text()
-        setSourceText(text)
-      }
-    } catch {
-      setError(t.errorTranslating)
-    }
-
-    // Reset file input
+    await extractTextFromFile(file)
     if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [t])
+  }, [extractTextFromFile])
+
+  // Drag-and-drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only set false if we actually left the drop zone
+    if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+
+    const file = e.dataTransfer.files?.[0]
+    if (file) {
+      await extractTextFromFile(file)
+    }
+  }, [extractTextFromFile])
 
   // Main translation handler
   const handleTranslate = useCallback(async () => {
@@ -333,6 +407,7 @@ export default function TranslatePage() {
     setSourceText('')
     setError(null)
     setDetectedLang(null)
+    setLoadedFileName(null)
   }
 
   const src = getLang(sourceLang)
@@ -571,12 +646,48 @@ export default function TranslatePage() {
             </div>
           </div>
 
-          {/* Text input area */}
-          <div className="rounded-xl border border-gray-200 mb-4 bg-white overflow-hidden">
+          {/* Text input area with drag-and-drop */}
+          <div
+            ref={dropZoneRef}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={cn(
+              'rounded-xl border-2 mb-4 bg-white overflow-hidden transition-all duration-200 relative',
+              isDragOver
+                ? 'border-[#c5032a] bg-red-50/30 shadow-lg'
+                : 'border-gray-200',
+            )}
+          >
+            {/* Drag overlay */}
+            {isDragOver && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-red-50/80 backdrop-blur-sm">
+                <Upload className="w-8 h-8 text-[#c5032a] mb-2" />
+                <p className="text-sm font-medium text-[#c5032a]">{t.dropFileHere}</p>
+                <p className="text-[10px] text-[#c5032a]/60 mt-1">{t.supportedFormats}</p>
+              </div>
+            )}
+
+            {/* Extracting file overlay */}
+            {isExtractingFile && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 backdrop-blur-sm">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400 mb-2" />
+                <p className="text-sm text-gray-600">{t.extractingText}</p>
+              </div>
+            )}
+
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50/50">
-              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
-                {t.pasteOrUpload}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
+                  {t.pasteOrUpload}
+                </p>
+                {loadedFileName && (
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-blue-600 bg-blue-50 rounded">
+                    <FileText className="w-3 h-3" />
+                    {loadedFileName}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {sourceText && (
                   <>
@@ -584,7 +695,7 @@ export default function TranslatePage() {
                       {sourceText.length.toLocaleString()} {t.charCount}
                     </span>
                     <button
-                      onClick={() => { setSourceText(''); setResult(null); setDetectedLang(null) }}
+                      onClick={() => { setSourceText(''); setResult(null); setDetectedLang(null); setLoadedFileName(null) }}
                       className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-gray-400 hover:text-gray-600 rounded transition-colors"
                     >
                       <X className="w-3 h-3" />
@@ -602,7 +713,7 @@ export default function TranslatePage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.pdf,.docx"
+                  accept=".txt,.pdf,.docx,.doc"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
@@ -611,7 +722,7 @@ export default function TranslatePage() {
             <textarea
               ref={textareaRef}
               value={sourceText}
-              onChange={(e) => { setSourceText(e.target.value); setResult(null) }}
+              onChange={(e) => { setSourceText(e.target.value); setResult(null); setLoadedFileName(null) }}
               placeholder={t.placeholder}
               rows={12}
               className="w-full px-4 py-3 text-sm text-gray-800 resize-none focus:outline-none placeholder:text-gray-400 leading-relaxed"
