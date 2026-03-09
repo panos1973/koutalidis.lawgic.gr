@@ -197,11 +197,13 @@ export default function TranslatePage() {
     setResult(null)
   }
 
-  // Extract text from a file via the server API
+  // Extract text from a file — always uses server API for binary formats
   const extractTextFromFile = useCallback(async (file: File) => {
-    const supportedExts = ['.txt', '.docx', '.doc', '.pdf']
-    const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-    if (!supportedExts.includes(ext)) {
+    const name = file.name.toLowerCase()
+    const isTxt = name.endsWith('.txt')
+    const isBinary = name.endsWith('.docx') || name.endsWith('.doc') || name.endsWith('.pdf')
+
+    if (!isTxt && !isBinary) {
       setError(t.unsupportedFile)
       return
     }
@@ -210,32 +212,31 @@ export default function TranslatePage() {
     setError(null)
 
     try {
-      if (ext === '.txt') {
-        // TXT files can be read client-side
-        const text = await file.text()
-        setSourceText(text)
-        setLoadedFileName(file.name)
-      } else {
-        // DOCX/DOC/PDF need server-side extraction
-        const formData = new FormData()
-        formData.append('file', file)
+      // ALL file types go through the server API for reliable extraction
+      // (even .txt for consistency, but especially DOCX/DOC/PDF which are binary)
+      const formData = new FormData()
+      formData.append('file', file)
 
-        const res = await fetch(`/${locale}/api/translate/extract-text`, {
-          method: 'POST',
-          body: formData,
-        })
+      const res = await fetch(`/${locale}/api/translate/extract-text`, {
+        method: 'POST',
+        body: formData,
+      })
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => null)
-          throw new Error(errData?.error || t.extractionFailed)
-        }
-
-        const { text, fileName } = await res.json()
-        setSourceText(text)
-        setLoadedFileName(fileName || file.name)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || t.extractionFailed)
       }
+
+      const data = await res.json()
+      if (!data.text || typeof data.text !== 'string') {
+        throw new Error(t.extractionFailed)
+      }
+
+      setSourceText(data.text)
+      setLoadedFileName(data.fileName || file.name)
       setResult(null)
     } catch (err) {
+      console.error('File extraction error:', err)
       setError(err instanceof Error ? err.message : t.extractionFailed)
     } finally {
       setIsExtractingFile(false)
