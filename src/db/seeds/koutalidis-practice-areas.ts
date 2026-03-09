@@ -223,10 +223,22 @@ export const MA_TOOLS = [
     practiceAreaId: 'ma',
     category: 'Transaction Docs',
     name: 'Disclosure Letter',
-    nameEl: 'Disclosure Letter',
+    nameEl: 'Επιστολή Γνωστοποιήσεων',
     description: 'Draft disclosure letters structured against SPA warranties',
     icon: 'file',
     sortOrder: 2,
+    toolType: 'document-generation',
+  },
+  // Document Generation
+  {
+    id: 'corporate-minutes',
+    practiceAreaId: 'ma',
+    category: 'Document Generation',
+    name: 'Corporate Minutes',
+    nameEl: 'Εταιρικά Πρακτικά',
+    description: 'Draft board and shareholder resolutions for M&A transactions under Greek corporate law',
+    icon: 'file',
+    sortOrder: 1,
     toolType: 'document-generation',
   },
 ]

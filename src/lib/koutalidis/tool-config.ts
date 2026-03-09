@@ -30,6 +30,17 @@ export const TOOL_MAX_TOKENS: Record<string, ToolConfig> = {
 
   // --- Translation ---
   'en-gr-translation': { maxTokens: 65536 }, // Full document translations
+
+  // --- M&A: Due Diligence ---
+  'dd-report': { maxTokens: 65536 }, // Full DD report across multiple workstreams
+  'red-flag-analysis': { maxTokens: 32768 }, // Concise red flag summary
+
+  // --- M&A: Transaction Docs ---
+  'spa-review': { maxTokens: 65536 }, // Detailed clause-by-clause SPA review
+  'disclosure-letter': { maxTokens: 32768 }, // Disclosure letter with warranty mapping
+
+  // --- M&A: Document Generation ---
+  'corporate-minutes': { maxTokens: 32768 }, // Multiple sets of minutes/resolutions
 }
 
 export function getToolMaxTokens(toolId: string): number {

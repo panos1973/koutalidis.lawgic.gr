@@ -41,6 +41,7 @@ export const TOOL_API_ROUTES: Record<string, string> = {
   'red-flag-analysis': '/api/ma/document-review',
   'spa-review': '/api/ma/document-review',
   'disclosure-letter': '/api/ma/document-generation',
+  'corporate-minutes': '/api/ma/document-generation',
 }
 
 // Maps general tool routes to existing pages
@@ -297,9 +298,23 @@ export const PRACTICE_TOOLS_BY_AREA: Record<
         practiceAreaId: 'ma',
         category: 'Transaction Docs',
         name: 'Disclosure Letter',
-        nameEl: 'Disclosure Letter',
+        nameEl: 'Επιστολή Γνωστοποιήσεων',
         description: 'Draft disclosure letters structured against SPA warranties',
-        descriptionEl: 'Σύνταξη disclosure letters δομημένων έναντι εγγυήσεων SPA',
+        descriptionEl: 'Σύνταξη επιστολών γνωστοποιήσεων δομημένων έναντι εγγυήσεων SPA',
+        icon: 'file',
+        toolType: 'document-generation',
+        apiRoute: '/api/ma/document-generation',
+      },
+    ],
+    'Document Generation': [
+      {
+        id: 'corporate-minutes',
+        practiceAreaId: 'ma',
+        category: 'Document Generation',
+        name: 'Corporate Minutes',
+        nameEl: 'Εταιρικά Πρακτικά',
+        description: 'Draft board and shareholder resolutions for M&A transactions under Greek corporate law',
+        descriptionEl: 'Σύνταξη αποφάσεων ΔΣ και ΓΣ για συναλλαγές M&A σύμφωνα με το ελληνικό εταιρικό δίκαιο',
         icon: 'file',
         toolType: 'document-generation',
         apiRoute: '/api/ma/document-generation',

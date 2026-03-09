@@ -225,6 +225,109 @@ export const TOOL_WELCOME_MESSAGES: Record<string, WelcomeMessage> = {
   },
 }
 
+  // --- M&A Tools ---
+
+  'dd-report': {
+    title: 'Due Diligence Report',
+    titleEl: 'Έκθεση Νομικού Ελέγχου',
+    description:
+      'Upload data room documents and transaction details, and I will generate a structured legal DD report with findings categorized by risk level.',
+    descriptionEl:
+      'Ανεβάστε έγγραφα από το data room και στοιχεία της συναλλαγής, και θα δημιουργήσω δομημένη έκθεση νομικού ελέγχου με ευρήματα κατηγοριοποιημένα κατά επίπεδο κινδύνου.',
+    steps: [
+      'Upload key data room documents (corporate, contracts, litigation, employment, regulatory, etc.)',
+      'Provide transaction context: share deal or asset deal, buyer or seller side, jurisdiction',
+      'Optionally upload a DD scope/checklist or precedent DD report for structure guidance',
+    ],
+    stepsEl: [
+      'Ανεβάστε βασικά έγγραφα από το data room (εταιρικά, συμβάσεις, δικαστικά, εργασιακά, κανονιστικά κλπ.)',
+      'Δώστε πλαίσιο συναλλαγής: share deal ή asset deal, πλευρά αγοραστή ή πωλητή, δικαιοδοσία',
+      'Προαιρετικά ανεβάστε DD checklist ή προηγούμενη έκθεση DD για καθοδήγηση δομής',
+    ],
+  },
+
+  'red-flag-analysis': {
+    title: 'Red Flag Analysis',
+    titleEl: 'Ανάλυση Red Flag',
+    description:
+      'Upload key transaction documents and I will perform a rapid red flag review, identifying critical issues and potential deal-breakers.',
+    descriptionEl:
+      'Ανεβάστε βασικά έγγραφα συναλλαγής και θα εκτελέσω ταχεία ανάλυση red flag, εντοπίζοντας κρίσιμα ζητήματα και πιθανά εμπόδια στη συναλλαγή.',
+    steps: [
+      'Upload key transaction documents (SPA, shareholders agreement, material contracts, financial statements, litigation files)',
+      'Describe the transaction context and any specific areas of concern',
+      'Indicate whether acting for buyer or seller',
+    ],
+    stepsEl: [
+      'Ανεβάστε βασικά έγγραφα συναλλαγής (SPA, συμφωνία μετόχων, ουσιώδεις συμβάσεις, οικονομικές καταστάσεις, δικαστικά)',
+      'Περιγράψτε το πλαίσιο συναλλαγής και τυχόν συγκεκριμένους τομείς ανησυχίας',
+      'Υποδείξτε αν ενεργείτε για αγοραστή ή πωλητή',
+    ],
+  },
+
+  'spa-review': {
+    title: 'SPA Review',
+    titleEl: 'Αξιολόγηση SPA',
+    description:
+      "Upload a draft SPA along with your internal template or term sheet, and I will identify deviations from market standard, flag negotiation points, and suggest alternative wording.",
+    descriptionEl:
+      'Ανεβάστε σχέδιο SPA μαζί με το εσωτερικό σας υπόδειγμα ή term sheet, και θα εντοπίσω αποκλίσεις από τα αγοραία πρότυπα, θα σημειώσω σημεία διαπραγμάτευσης και θα προτείνω εναλλακτική διατύπωση.',
+    steps: [
+      'Upload the draft SPA to be reviewed',
+      "Upload the firm's internal SPA template or a precedent SPA from a similar transaction",
+      'Upload the term sheet / heads of terms (to verify commercial terms)',
+      'Indicate whether acting for buyer or seller',
+    ],
+    stepsEl: [
+      'Ανεβάστε το σχέδιο SPA προς αξιολόγηση',
+      'Ανεβάστε το εσωτερικό υπόδειγμα SPA ή ένα SPA από παρόμοια συναλλαγή',
+      'Ανεβάστε το term sheet / heads of terms (για επαλήθευση εμπορικών όρων)',
+      'Υποδείξτε αν ενεργείτε για αγοραστή ή πωλητή',
+    ],
+  },
+
+  'disclosure-letter': {
+    title: 'Disclosure Letter',
+    titleEl: 'Επιστολή Γνωστοποιήσεων',
+    description:
+      'Upload the SPA warranty schedule and supporting data room documents, and I will draft a structured disclosure letter with specific disclosures mapped to each warranty.',
+    descriptionEl:
+      'Ανεβάστε το παράρτημα εγγυήσεων του SPA και τα σχετικά έγγραφα data room, και θα συντάξω δομημένη επιστολή γνωστοποιήσεων με αντιστοίχιση σε κάθε εγγύηση.',
+    steps: [
+      'Upload the SPA (or at minimum the warranty schedule)',
+      'Upload key data room documents that support disclosures',
+      'Provide any specific client instructions on matters to disclose',
+      'Optionally upload a precedent disclosure letter for structure guidance',
+    ],
+    stepsEl: [
+      'Ανεβάστε το SPA (ή τουλάχιστον το παράρτημα εγγυήσεων)',
+      'Ανεβάστε βασικά έγγραφα data room που υποστηρίζουν τις γνωστοποιήσεις',
+      'Δώστε τυχόν συγκεκριμένες οδηγίες πελάτη για θέματα προς γνωστοποίηση',
+      'Προαιρετικά ανεβάστε προηγούμενη επιστολή γνωστοποιήσεων για καθοδήγηση δομής',
+    ],
+  },
+
+  'corporate-minutes': {
+    title: 'Corporate Minutes & Resolutions',
+    titleEl: 'Εταιρικά Πρακτικά & Αποφάσεις',
+    description:
+      'Upload the SPA and company details, and I will draft board/shareholder resolutions required for the M&A transaction, compliant with Greek corporate law.',
+    descriptionEl:
+      'Ανεβάστε το SPA και τα στοιχεία εταιρείας, και θα συντάξω αποφάσεις ΔΣ/ΓΣ για τη συναλλαγή M&A, σύμφωνα με το ελληνικό εταιρικό δίκαιο.',
+    steps: [
+      'Upload the SPA or transaction documents (to identify required approvals)',
+      'Upload the articles of association / bylaws of the relevant company',
+      'Provide company details: entity name, registration number, directors, shareholders',
+      'Specify which approvals are needed: transaction approval, power of attorney, director changes, etc.',
+    ],
+    stepsEl: [
+      'Ανεβάστε το SPA ή τα έγγραφα συναλλαγής (για εντοπισμό απαιτούμενων εγκρίσεων)',
+      'Ανεβάστε το καταστατικό της σχετικής εταιρείας',
+      'Δώστε στοιχεία εταιρείας: επωνυμία, ΓΕΜΗ, μέλη ΔΣ, μέτοχοι',
+      'Προσδιορίστε ποιες εγκρίσεις χρειάζονται: έγκριση συναλλαγής, πληρεξούσιο, αλλαγές ΔΣ κλπ.',
+    ],
+  },
+
 export function getWelcomeMessage(
   toolId: string,
   locale: string = 'en'
