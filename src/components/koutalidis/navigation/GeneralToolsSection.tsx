@@ -73,7 +73,7 @@ export function GeneralToolsSection() {
           })}
 
           {/* Vault — separated by a thin line */}
-          <div className="border-t border-gray-300 my-2" />
+          <div className="mt-3 mb-2 border-t border-gray-300" />
           <Link
             href={`/${locale}${VAULT_TOOL.route}`}
             className={cn(

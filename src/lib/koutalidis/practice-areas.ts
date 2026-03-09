@@ -43,6 +43,7 @@ export const TOOL_API_ROUTES: Record<string, string> = {
 
 // Maps general tool routes to existing pages
 export const GENERAL_TOOL_ROUTES: Record<string, string> = {
+  translate: '/translate',
   'case-research': '/case-research',
   'document-creation': '/document-creation',
   contract: '/contract',
@@ -277,6 +278,13 @@ export const PRACTICE_TOOLS_BY_AREA: Record<
 
 // General tools (existing platform tools)
 export const GENERAL_TOOLS = [
+  {
+    id: 'translate',
+    name: 'Legal Translation',
+    nameEl: 'Νομική Μετάφραση',
+    icon: 'languages',
+    route: '/translate',
+  },
   {
     id: 'lawbot',
     name: 'Legal Research',
