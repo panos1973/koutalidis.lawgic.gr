@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { GENERAL_TOOLS } from '@/lib/koutalidis/practice-areas'
+import { GENERAL_TOOLS, VAULT_TOOL } from '@/lib/koutalidis/practice-areas'
 import { PracticeIcon } from '../icons/PracticeIcons'
 
 const STORAGE_KEY = 'koutalidis_general_tools_expanded'
@@ -15,6 +15,7 @@ export function GeneralToolsSection() {
   const locale = useLocale()
   const pathname = usePathname()
   const isOnGeneralTool = GENERAL_TOOLS.some((tool) => pathname.includes(tool.route))
+  const isOnVault = pathname.includes(VAULT_TOOL.route)
 
   const [expanded, setExpanded] = useState(() => {
     if (typeof window === 'undefined') return true
@@ -70,6 +71,25 @@ export function GeneralToolsSection() {
               </Link>
             )
           })}
+
+          {/* Vault — separated by a thin line */}
+          <div className="border-t border-gray-300 my-2" />
+          <Link
+            href={`/${locale}${VAULT_TOOL.route}`}
+            className={cn(
+              'flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors',
+              isOnVault
+                ? 'bg-red-50 text-[#c5032a] font-medium'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            )}
+          >
+            <PracticeIcon
+              iconName={VAULT_TOOL.icon}
+              size={14}
+              className={isOnVault ? 'text-[#c5032a]' : 'text-gray-400'}
+            />
+            <span>{locale === 'el' ? VAULT_TOOL.nameEl : VAULT_TOOL.name}</span>
+          </Link>
         </div>
       )}
     </div>
