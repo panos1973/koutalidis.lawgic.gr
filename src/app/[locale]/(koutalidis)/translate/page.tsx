@@ -67,7 +67,7 @@ const labels = {
     translatingSection: 'Μετάφραση τμήματος',
     legalDomain: 'Νομικός τομέας:',
     uploadFile: 'Ανέβασμα αρχείου',
-    supportedFormats: 'TXT, PDF, DOCX',
+    supportedFormats: 'TXT, PDF, DOCX, DOC, RTF, XLS, XLSX, PPT, PPTX, EML, MSG',
     clearText: 'Καθαρισμός',
     charCount: 'χαρακτήρες',
     translationResult: 'Αποτέλεσμα Μετάφρασης',
@@ -75,7 +75,7 @@ const labels = {
     dropFileHere: 'Αφήστε το αρχείο εδώ',
     extractingText: 'Εξαγωγή κειμένου...',
     fileLoaded: 'Φορτώθηκε από',
-    unsupportedFile: 'Μη υποστηριζόμενος τύπος αρχείου. Υποστηρίζονται: TXT, DOCX, DOC, PDF',
+    unsupportedFile: 'Μη υποστηριζόμενος τύπος αρχείου. Υποστηρίζονται: TXT, PDF, DOCX, DOC, RTF, XLS, XLSX, PPT, PPTX, EML, MSG',
     extractionFailed: 'Αποτυχία εξαγωγής κειμένου από το αρχείο.',
   },
   en: {
@@ -106,7 +106,7 @@ const labels = {
     translatingSection: 'Translating section',
     legalDomain: 'Legal domain:',
     uploadFile: 'Upload file',
-    supportedFormats: 'TXT, PDF, DOCX',
+    supportedFormats: 'TXT, PDF, DOCX, DOC, RTF, XLS, XLSX, PPT, PPTX, EML, MSG',
     clearText: 'Clear',
     charCount: 'characters',
     translationResult: 'Translation Result',
@@ -114,7 +114,7 @@ const labels = {
     dropFileHere: 'Drop file here',
     extractingText: 'Extracting text...',
     fileLoaded: 'Loaded from',
-    unsupportedFile: 'Unsupported file type. Supported: TXT, DOCX, DOC, PDF',
+    unsupportedFile: 'Unsupported file type. Supported: TXT, PDF, DOCX, DOC, RTF, XLS, XLSX, PPT, PPTX, EML, MSG',
     extractionFailed: 'Failed to extract text from file.',
   },
 }
@@ -200,10 +200,9 @@ export default function TranslatePage() {
   // Extract text from a file — always uses server API for binary formats
   const extractTextFromFile = useCallback(async (file: File) => {
     const name = file.name.toLowerCase()
-    const isTxt = name.endsWith('.txt')
-    const isBinary = name.endsWith('.docx') || name.endsWith('.doc') || name.endsWith('.pdf')
-
-    if (!isTxt && !isBinary) {
+    const supportedExts = ['.txt', '.md', '.html', '.htm', '.csv', '.pdf', '.docx', '.doc', '.rtf', '.odt', '.xls', '.xlsx', '.ppt', '.pptx', '.eml', '.msg']
+    const ext = name.slice(name.lastIndexOf('.'))
+    if (!supportedExts.includes(ext)) {
       setError(t.unsupportedFile)
       return
     }
@@ -713,7 +712,7 @@ export default function TranslatePage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.pdf,.docx,.doc"
+                  accept=".txt,.md,.html,.htm,.csv,.pdf,.docx,.doc,.rtf,.odt,.xls,.xlsx,.ppt,.pptx,.eml,.msg"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
