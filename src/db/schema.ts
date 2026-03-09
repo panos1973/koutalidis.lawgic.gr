@@ -1289,3 +1289,15 @@ export const toolFilesRelations = relations(toolFiles, ({ one }) => ({
     references: [chats.id],
   }),
 }))
+
+// ─── TABULAR REVIEW ─────────────────────────────────────────────────
+export {
+  tabular_reviews,
+  tabular_review_columns,
+  tabular_review_documents,
+  tabular_review_cells,
+  tabularReviewRelations,
+  tabularReviewColumnRelations,
+  tabularReviewDocumentRelations,
+  tabularReviewCellRelations,
+} from './schema_tabular_review'

@@ -223,7 +223,6 @@ export const TOOL_WELCOME_MESSAGES: Record<string, WelcomeMessage> = {
       'Προσδιορίστε τυχόν προτιμήσεις ορολογίας του γραφείου',
     ],
   },
-}
 
   // --- M&A Tools ---
 
@@ -327,6 +326,7 @@ export const TOOL_WELCOME_MESSAGES: Record<string, WelcomeMessage> = {
       'Προσδιορίστε ποιες εγκρίσεις χρειάζονται: έγκριση συναλλαγής, πληρεξούσιο, αλλαγές ΔΣ κλπ.',
     ],
   },
+}
 
 export function getWelcomeMessage(
   toolId: string,

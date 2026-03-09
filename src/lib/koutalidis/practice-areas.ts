@@ -53,6 +53,7 @@ export const GENERAL_TOOL_ROUTES: Record<string, string> = {
   // 'standard-contract': '/standard-contract', // Hidden for now
   'compare-contract': '/compare-contract',
   lawbot: '/lawbot',
+  'tabular-review': '/tabular-review',
 }
 
 // Static practice areas data for client-side use
@@ -366,6 +367,13 @@ export const GENERAL_TOOLS = [
     nameEl: 'Σύγκριση Συμβάσεων',
     icon: 'convertShape',
     route: '/compare-contract',
+  },
+  {
+    id: 'tabular-review',
+    name: 'Tabular Review',
+    nameEl: 'Tabular Review',
+    icon: 'table',
+    route: '/tabular-review',
   },
   // {
   //   id: 'standard-contract',

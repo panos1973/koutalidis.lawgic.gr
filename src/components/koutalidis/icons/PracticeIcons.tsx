@@ -20,6 +20,7 @@ import {
   FolderOpen,
   BookOpen,
   Archive,
+  Table2,
   type LucideProps,
 } from 'lucide-react'
 
@@ -43,6 +44,7 @@ const ICON_MAP: Record<string, React.FC<LucideProps>> = {
   folderOpen: FolderOpen,
   book: BookOpen,
   archive: Archive,
+  table: Table2,
 }
 
 interface PracticeIconProps extends LucideProps {
