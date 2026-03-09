@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { useLocale } from 'next-intl'
 import {
   ArrowRightLeft,
@@ -14,9 +14,13 @@ import {
   Sparkles,
   Upload,
   X,
+  FileDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { detectDocumentLanguage, type LangCode } from '@/lib/translate/detect-language'
+
+// Lazy-load the DOCX preview to avoid SSR issues with docx-preview
+const DocxPreview = lazy(() => import('@/components/translate/DocxPreview'))
 
 // ─── Supported languages ────────────────────────────────────────────
 interface Language {
@@ -35,6 +39,13 @@ const LANGUAGES: Language[] = [
 
 function getLang(code: LangCode): Language {
   return LANGUAGES.find((l) => l.code === code)!
+}
+
+const DOCX_EXTENSIONS = ['.docx']
+
+function isDocxFile(fileName: string): boolean {
+  const ext = fileName.toLowerCase().slice(fileName.lastIndexOf('.'))
+  return DOCX_EXTENSIONS.includes(ext)
 }
 
 // ─── i18n labels ────────────────────────────────────────────────────
@@ -57,6 +68,7 @@ const labels = {
     copy: 'Αντιγραφή',
     copied: 'Αντιγράφηκε!',
     download: 'Λήψη .txt',
+    downloadDocx: 'Λήψη .docx',
     detected: 'Εντοπίστηκε',
     document: 'κείμενο',
     highConfidence: '(υψηλή βεβαιότητα)',
@@ -67,7 +79,7 @@ const labels = {
     translatingSection: 'Μετάφραση τμήματος',
     legalDomain: 'Νομικός τομέας:',
     uploadFile: 'Ανέβασμα αρχείου',
-    supportedFormats: 'TXT, PDF, DOCX',
+    supportedFormats: 'TXT, PDF, DOCX, DOC, RTF, XLS, XLSX, PPT, PPTX, EML, MSG',
     clearText: 'Καθαρισμός',
     charCount: 'χαρακτήρες',
     translationResult: 'Αποτέλεσμα Μετάφρασης',
@@ -75,8 +87,12 @@ const labels = {
     dropFileHere: 'Αφήστε το αρχείο εδώ',
     extractingText: 'Εξαγωγή κειμένου...',
     fileLoaded: 'Φορτώθηκε από',
-    unsupportedFile: 'Μη υποστηριζόμενος τύπος αρχείου. Υποστηρίζονται: TXT, DOCX, DOC, PDF',
+    unsupportedFile: 'Μη υποστηριζόμενος τύπος αρχείου. Υποστηρίζονται: TXT, PDF, DOCX, DOC, RTF, XLS, XLSX, PPT, PPTX, EML, MSG',
     extractionFailed: 'Αποτυχία εξαγωγής κειμένου από το αρχείο.',
+    documentPreview: 'Προεπισκόπηση Εγγράφου',
+    buildingDocx: 'Δημιουργία μεταφρασμένου εγγράφου...',
+    originalDocument: 'Πρωτότυπο',
+    translatedDocument: 'Μεταφρασμένο',
   },
   en: {
     title: 'Legal Translation',
@@ -96,6 +112,7 @@ const labels = {
     copy: 'Copy',
     copied: 'Copied!',
     download: 'Download .txt',
+    downloadDocx: 'Download .docx',
     detected: 'Detected',
     document: 'text',
     highConfidence: '(high confidence)',
@@ -106,7 +123,7 @@ const labels = {
     translatingSection: 'Translating section',
     legalDomain: 'Legal domain:',
     uploadFile: 'Upload file',
-    supportedFormats: 'TXT, PDF, DOCX',
+    supportedFormats: 'TXT, PDF, DOCX, DOC, RTF, XLS, XLSX, PPT, PPTX, EML, MSG',
     clearText: 'Clear',
     charCount: 'characters',
     translationResult: 'Translation Result',
@@ -114,14 +131,18 @@ const labels = {
     dropFileHere: 'Drop file here',
     extractingText: 'Extracting text...',
     fileLoaded: 'Loaded from',
-    unsupportedFile: 'Unsupported file type. Supported: TXT, DOCX, DOC, PDF',
+    unsupportedFile: 'Unsupported file type. Supported: TXT, PDF, DOCX, DOC, RTF, XLS, XLSX, PPT, PPTX, EML, MSG',
     extractionFailed: 'Failed to extract text from file.',
+    documentPreview: 'Document Preview',
+    buildingDocx: 'Building translated document...',
+    originalDocument: 'Original',
+    translatedDocument: 'Translated',
   },
 }
 
 // ─── Progress type ──────────────────────────────────────────────────
 interface TranslationProgress {
-  phase: 'preparing' | 'translating' | 'complete'
+  phase: 'preparing' | 'translating' | 'building' | 'complete'
   currentBatch: number
   totalBatches: number
   message: string
@@ -131,6 +152,14 @@ interface TranslationResult {
   translatedText: string
   paragraphCount: number
   domain: { primaryDomain: string; secondaryDomain: string | null }
+}
+
+// DOCX document mode state
+interface DocxState {
+  docxBase64: string
+  paragraphs: string[]
+  fileName: string
+  translatedDocxBase64: string | null
 }
 
 // ─── Main component ─────────────────────────────────────────────────
@@ -153,9 +182,15 @@ export default function TranslatePage() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [isExtractingFile, setIsExtractingFile] = useState(false)
   const [loadedFileName, setLoadedFileName] = useState<string | null>(null)
+
+  // DOCX document mode
+  const [docxState, setDocxState] = useState<DocxState | null>(null)
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
+
+  const isDocxMode = docxState !== null
 
   // Auto-detect language when text changes (debounced)
   useEffect(() => {
@@ -179,6 +214,23 @@ export default function TranslatePage() {
     return () => clearTimeout(timer)
   }, [sourceText])
 
+  // Auto-detect language for DOCX mode when paragraphs are loaded
+  useEffect(() => {
+    if (!docxState || docxState.paragraphs.length === 0) return
+    const sampleText = docxState.paragraphs.slice(0, 10).join('\n')
+    if (sampleText.length < 50) return
+
+    const detection = detectDocumentLanguage(sampleText)
+    setDetectedLang({ lang: detection.detectedLang, confidence: detection.confidence })
+
+    if (detection.confidence >= 0.5) {
+      setSourceLang(detection.detectedLang)
+      if (detection.detectedLang === 'el') setTargetLang('en')
+      else if (detection.detectedLang === 'en') setTargetLang('el')
+      else setTargetLang('en')
+    }
+  }, [docxState])
+
   const swapLanguages = () => {
     setSourceLang(targetLang)
     setTargetLang(sourceLang)
@@ -197,23 +249,64 @@ export default function TranslatePage() {
     setResult(null)
   }
 
-  // Extract text from a file — always uses server API for binary formats
+  // Handle a DOCX file — use the docx-extract API to get paragraphs + base64
+  const handleDocxFile = useCallback(async (file: File) => {
+    setIsExtractingFile(true)
+    setError(null)
+    setSourceText('')
+    setResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch(`/${locale}/api/translate/docx-extract`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || t.extractionFailed)
+      }
+
+      const data = await res.json()
+      setDocxState({
+        docxBase64: data.docxBase64,
+        paragraphs: data.paragraphs,
+        fileName: data.fileName || file.name,
+        translatedDocxBase64: null,
+      })
+      setLoadedFileName(data.fileName || file.name)
+    } catch (err) {
+      console.error('DOCX extraction error:', err)
+      setError(err instanceof Error ? err.message : t.extractionFailed)
+    } finally {
+      setIsExtractingFile(false)
+    }
+  }, [locale, t])
+
+  // Extract text from a non-DOCX file — uses server API
   const extractTextFromFile = useCallback(async (file: File) => {
     const name = file.name.toLowerCase()
-    const isTxt = name.endsWith('.txt')
-    const isBinary = name.endsWith('.docx') || name.endsWith('.doc') || name.endsWith('.pdf')
-
-    if (!isTxt && !isBinary) {
+    const supportedExts = ['.txt', '.md', '.html', '.htm', '.csv', '.pdf', '.docx', '.doc', '.rtf', '.odt', '.xls', '.xlsx', '.ppt', '.pptx', '.eml', '.msg']
+    const ext = name.slice(name.lastIndexOf('.'))
+    if (!supportedExts.includes(ext)) {
       setError(t.unsupportedFile)
+      return
+    }
+
+    // DOCX files go through the document mode
+    if (isDocxFile(name)) {
+      await handleDocxFile(file)
       return
     }
 
     setIsExtractingFile(true)
     setError(null)
+    setDocxState(null)
 
     try {
-      // ALL file types go through the server API for reliable extraction
-      // (even .txt for consistency, but especially DOCX/DOC/PDF which are binary)
       const formData = new FormData()
       formData.append('file', file)
 
@@ -241,7 +334,7 @@ export default function TranslatePage() {
     } finally {
       setIsExtractingFile(false)
     }
-  }, [locale, t])
+  }, [locale, t, handleDocxFile])
 
   // Handle file input change
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -261,7 +354,6 @@ export default function TranslatePage() {
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only set false if we actually left the drop zone
     if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
       setIsDragOver(false)
     }
@@ -278,12 +370,9 @@ export default function TranslatePage() {
     }
   }, [extractTextFromFile])
 
-  // Main translation handler
-  const handleTranslate = useCallback(async () => {
-    if (!sourceText.trim()) {
-      setError(t.noContent)
-      return
-    }
+  // ─── DOCX Translation handler ─────────────────────────────────────
+  const handleDocxTranslate = useCallback(async () => {
+    if (!docxState) return
 
     setIsTranslating(true)
     setResult(null)
@@ -291,7 +380,9 @@ export default function TranslatePage() {
     setError(null)
 
     try {
-      // Phase 1: Prepare — split paragraphs, detect domain
+      const { paragraphs, docxBase64 } = docxState
+
+      // Phase 1: Detect domain from paragraph text
       setProgress({
         phase: 'preparing',
         message: t.analyzingDomain,
@@ -299,11 +390,12 @@ export default function TranslatePage() {
         totalBatches: 0,
       })
 
+      const fullText = paragraphs.join('\n\n')
       const prepareRes = await fetch(`/${locale}/api/translate/prepare`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: sourceText,
+          content: fullText,
           sourceLang,
           targetLang,
         }),
@@ -315,19 +407,10 @@ export default function TranslatePage() {
       }
 
       const prepareData = await prepareRes.json()
-      const {
-        paragraphs,
-        domain,
-        totalBatches,
-        batchSize,
-      }: {
-        paragraphs: string[]
-        domain: { primaryDomain: string; secondaryDomain: string | null }
-        totalBatches: number
-        batchSize: number
-      } = prepareData
+      const { domain, batchSize } = prepareData
 
-      // Phase 2: Translate each batch individually (avoids timeout)
+      // Phase 2: Translate paragraphs in batches (using the DOCX-extracted paragraphs)
+      const totalBatches = Math.ceil(paragraphs.length / batchSize)
       const allTranslations: string[] = []
 
       for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
@@ -365,7 +448,143 @@ export default function TranslatePage() {
         allTranslations.push(...translations)
       }
 
-      // Phase 3: Combine results
+      // Phase 3: Build translated DOCX
+      setProgress({
+        phase: 'building',
+        message: t.buildingDocx,
+        currentBatch: totalBatches,
+        totalBatches,
+      })
+
+      const paragraphMap = paragraphs.map((original, i) => ({
+        original,
+        translated: allTranslations[i] || original,
+      }))
+
+      const docxRes = await fetch(`/${locale}/api/translate/docx-translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          docxBase64,
+          paragraphMap,
+        }),
+      })
+
+      if (!docxRes.ok) {
+        const errData = await docxRes.json().catch(() => null)
+        throw new Error(errData?.error || 'Failed to build translated document')
+      }
+
+      const docxResult = await docxRes.json()
+
+      // Update state with translated DOCX
+      setDocxState((prev) =>
+        prev ? { ...prev, translatedDocxBase64: docxResult.docxBase64 } : prev,
+      )
+
+      const translatedText = allTranslations
+        .filter((t) => t.trim().length > 0)
+        .join('\n\n')
+
+      setResult({
+        translatedText,
+        paragraphCount: paragraphs.length,
+        domain,
+      })
+    } catch (err) {
+      console.error('DOCX translation error:', err)
+      setError(err instanceof Error ? err.message : t.errorTranslating)
+    } finally {
+      setIsTranslating(false)
+      setProgress(null)
+    }
+  }, [docxState, sourceLang, targetLang, locale, t])
+
+  // ─── Plain text translation handler ────────────────────────────────
+  const handleTextTranslate = useCallback(async () => {
+    if (!sourceText.trim()) {
+      setError(t.noContent)
+      return
+    }
+
+    setIsTranslating(true)
+    setResult(null)
+    setProgress(null)
+    setError(null)
+
+    try {
+      setProgress({
+        phase: 'preparing',
+        message: t.analyzingDomain,
+        currentBatch: 0,
+        totalBatches: 0,
+      })
+
+      const prepareRes = await fetch(`/${locale}/api/translate/prepare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: sourceText,
+          sourceLang,
+          targetLang,
+        }),
+      })
+
+      if (!prepareRes.ok) {
+        const errData = await prepareRes.json().catch(() => null)
+        throw new Error(errData?.error || `Preparation failed (${prepareRes.status})`)
+      }
+
+      const prepareData = await prepareRes.json()
+      const {
+        paragraphs,
+        domain,
+        totalBatches,
+        batchSize,
+      }: {
+        paragraphs: string[]
+        domain: { primaryDomain: string; secondaryDomain: string | null }
+        totalBatches: number
+        batchSize: number
+      } = prepareData
+
+      const allTranslations: string[] = []
+
+      for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+        const batchTexts = paragraphs.slice(
+          batchIdx * batchSize,
+          (batchIdx + 1) * batchSize,
+        )
+
+        setProgress({
+          phase: 'translating',
+          message: `${t.translatingSection} ${batchIdx + 1} ${t.of} ${totalBatches}...`,
+          currentBatch: batchIdx + 1,
+          totalBatches,
+        })
+
+        const batchRes = await fetch(`/${locale}/api/translate/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            texts: batchTexts,
+            sourceLang,
+            targetLang,
+            domain,
+          }),
+        })
+
+        if (!batchRes.ok) {
+          const errData = await batchRes.json().catch(() => null)
+          throw new Error(
+            errData?.error || `Batch ${batchIdx + 1} failed (${batchRes.status})`,
+          )
+        }
+
+        const { translations }: { translations: string[] } = await batchRes.json()
+        allTranslations.push(...translations)
+      }
+
       const translatedText = allTranslations
         .filter((t) => t.trim().length > 0)
         .join('\n\n')
@@ -384,6 +603,15 @@ export default function TranslatePage() {
     }
   }, [sourceText, sourceLang, targetLang, locale, t])
 
+  // Dispatch to correct handler
+  const handleTranslate = useCallback(() => {
+    if (isDocxMode) {
+      handleDocxTranslate()
+    } else {
+      handleTextTranslate()
+    }
+  }, [isDocxMode, handleDocxTranslate, handleTextTranslate])
+
   const handleCopy = async () => {
     if (!result?.translatedText) return
     await navigator.clipboard.writeText(result.translatedText)
@@ -391,7 +619,7 @@ export default function TranslatePage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleDownload = () => {
+  const handleDownloadTxt = () => {
     if (!result?.translatedText) return
     const blob = new Blob([result.translatedText], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -402,16 +630,41 @@ export default function TranslatePage() {
     URL.revokeObjectURL(url)
   }
 
+  const handleDownloadDocx = () => {
+    if (!docxState?.translatedDocxBase64) return
+
+    const binaryString = atob(docxState.translatedDocxBase64)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+    const blob = new Blob([bytes], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const baseName = docxState.fileName.replace(/\.docx$/i, '')
+    a.download = `${baseName}_${targetLang}.docx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const handleNewTranslation = () => {
     setResult(null)
     setSourceText('')
     setError(null)
     setDetectedLang(null)
     setLoadedFileName(null)
+    setDocxState(null)
   }
 
   const src = getLang(sourceLang)
   const tgt = getLang(targetLang)
+
+  const canTranslate = isDocxMode
+    ? docxState.paragraphs.length > 0 && sourceLang !== targetLang
+    : sourceText.trim().length > 0 && sourceLang !== targetLang
 
   // ─── Loading state with progress ──────────────────────────────────
   if (isTranslating) {
@@ -427,12 +680,16 @@ export default function TranslatePage() {
               <span className="text-[10px] text-gray-400 uppercase tracking-wider font-medium">
                 {progress.phase === 'preparing'
                   ? t.analyzing
-                  : `${t.section} ${progress.currentBatch}/${progress.totalBatches}`}
+                  : progress.phase === 'building'
+                    ? t.buildingDocx
+                    : `${t.section} ${progress.currentBatch}/${progress.totalBatches}`}
               </span>
               <span className="text-[10px] text-gray-500 font-bold">
                 {progress.phase === 'preparing'
                   ? '...'
-                  : `${Math.round((progress.currentBatch / progress.totalBatches) * 100)}%`}
+                  : progress.phase === 'building'
+                    ? '99%'
+                    : `${Math.round((progress.currentBatch / progress.totalBatches) * 100)}%`}
               </span>
             </div>
             <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -442,7 +699,9 @@ export default function TranslatePage() {
                   width:
                     progress.phase === 'preparing'
                       ? '5%'
-                      : `${(progress.currentBatch / progress.totalBatches) * 100}%`,
+                      : progress.phase === 'building'
+                        ? '99%'
+                        : `${(progress.currentBatch / progress.totalBatches) * 100}%`,
                 }}
               />
             </div>
@@ -457,7 +716,7 @@ export default function TranslatePage() {
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-5xl mx-auto">
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -487,13 +746,23 @@ export default function TranslatePage() {
                   <Copy className="w-3.5 h-3.5" />
                   {copied ? t.copied : t.copy}
                 </button>
-                <button
-                  onClick={handleDownload}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  {t.download}
-                </button>
+                {docxState?.translatedDocxBase64 ? (
+                  <button
+                    onClick={handleDownloadDocx}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#c5032a] hover:bg-[#a5021f] rounded-lg transition-colors"
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    {t.downloadDocx}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleDownloadTxt}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {t.download}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -506,12 +775,66 @@ export default function TranslatePage() {
               <span className="text-xs font-medium text-gray-900">{tgt.name}</span>
             </div>
 
-            {/* Translation text */}
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                {result.translatedText}
+            {/* DOCX mode: side-by-side document previews */}
+            {docxState?.translatedDocxBase64 ? (
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                {/* Original document */}
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                  <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
+                      {t.originalDocument}
+                    </p>
+                  </div>
+                  <Suspense fallback={
+                    <div className="flex items-center justify-center h-96">
+                      <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
+                    </div>
+                  }>
+                    <DocxPreview
+                      docxBase64={docxState.docxBase64}
+                      className="h-[600px]"
+                    />
+                  </Suspense>
+                </div>
+
+                {/* Translated document */}
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                  <div className="px-3 py-2 border-b border-gray-100 bg-green-50">
+                    <p className="text-[10px] uppercase tracking-wider text-green-600 font-medium">
+                      {t.translatedDocument}
+                    </p>
+                  </div>
+                  <Suspense fallback={
+                    <div className="flex items-center justify-center h-96">
+                      <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
+                    </div>
+                  }>
+                    <DocxPreview
+                      docxBase64={docxState.translatedDocxBase64}
+                      className="h-[600px]"
+                    />
+                  </Suspense>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* Plain text result */
+              <div className="rounded-xl border border-gray-200 bg-white p-5">
+                <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                  {result.translatedText}
+                </div>
+              </div>
+            )}
+
+            {/* Also offer .txt download for DOCX mode */}
+            {docxState?.translatedDocxBase64 && (
+              <button
+                onClick={handleDownloadTxt}
+                className="mt-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <Download className="w-3 h-3" />
+                {t.download}
+              </button>
+            )}
 
             {/* New translation button */}
             <button
@@ -646,7 +969,7 @@ export default function TranslatePage() {
             </div>
           </div>
 
-          {/* Text input area with drag-and-drop */}
+          {/* Input area: DOCX preview or plain text textarea */}
           <div
             ref={dropZoneRef}
             onDragOver={handleDragOver}
@@ -676,10 +999,11 @@ export default function TranslatePage() {
               </div>
             )}
 
+            {/* Toolbar */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-gray-50/50">
               <div className="flex items-center gap-2">
                 <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
-                  {t.pasteOrUpload}
+                  {isDocxMode ? t.documentPreview : t.pasteOrUpload}
                 </p>
                 {loadedFileName && (
                   <span className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-blue-600 bg-blue-50 rounded">
@@ -689,19 +1013,24 @@ export default function TranslatePage() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {sourceText && (
-                  <>
-                    <span className="text-[10px] text-gray-400">
-                      {sourceText.length.toLocaleString()} {t.charCount}
-                    </span>
-                    <button
-                      onClick={() => { setSourceText(''); setResult(null); setDetectedLang(null); setLoadedFileName(null) }}
-                      className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-gray-400 hover:text-gray-600 rounded transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                      {t.clearText}
-                    </button>
-                  </>
+                {!isDocxMode && sourceText && (
+                  <span className="text-[10px] text-gray-400">
+                    {sourceText.length.toLocaleString()} {t.charCount}
+                  </span>
+                )}
+                {isDocxMode && (
+                  <span className="text-[10px] text-gray-400">
+                    {docxState.paragraphs.length} paragraphs
+                  </span>
+                )}
+                {(sourceText || isDocxMode) && (
+                  <button
+                    onClick={() => { setSourceText(''); setResult(null); setDetectedLang(null); setLoadedFileName(null); setDocxState(null) }}
+                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-gray-400 hover:text-gray-600 rounded transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    {t.clearText}
+                  </button>
                 )}
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -713,20 +1042,35 @@ export default function TranslatePage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".txt,.pdf,.docx,.doc"
+                  accept=".txt,.md,.html,.htm,.csv,.pdf,.docx,.doc,.rtf,.odt,.xls,.xlsx,.ppt,.pptx,.eml,.msg"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
               </div>
             </div>
-            <textarea
-              ref={textareaRef}
-              value={sourceText}
-              onChange={(e) => { setSourceText(e.target.value); setResult(null); setLoadedFileName(null) }}
-              placeholder={t.placeholder}
-              rows={12}
-              className="w-full px-4 py-3 text-sm text-gray-800 resize-none focus:outline-none placeholder:text-gray-400 leading-relaxed"
-            />
+
+            {/* Content area */}
+            {isDocxMode ? (
+              <Suspense fallback={
+                <div className="flex items-center justify-center h-96">
+                  <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
+                </div>
+              }>
+                <DocxPreview
+                  docxBase64={docxState.docxBase64}
+                  className="h-[500px]"
+                />
+              </Suspense>
+            ) : (
+              <textarea
+                ref={textareaRef}
+                value={sourceText}
+                onChange={(e) => { setSourceText(e.target.value); setResult(null); setLoadedFileName(null) }}
+                placeholder={t.placeholder}
+                rows={12}
+                className="w-full px-4 py-3 text-sm text-gray-800 resize-none focus:outline-none placeholder:text-gray-400 leading-relaxed"
+              />
+            )}
           </div>
 
           {/* Error message */}
@@ -739,7 +1083,7 @@ export default function TranslatePage() {
           {/* Translate button */}
           <button
             onClick={handleTranslate}
-            disabled={isTranslating || sourceLang === targetLang || !sourceText.trim()}
+            disabled={isTranslating || !canTranslate}
             className="w-full py-3 rounded-xl text-sm font-medium gap-2 flex items-center justify-center
                        bg-[#c5032a] hover:bg-[#a5021f] text-white shadow-sm hover:shadow-md
                        disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"

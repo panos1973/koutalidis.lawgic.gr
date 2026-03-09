@@ -52,6 +52,7 @@
     "clsx": "^2.1.1",
     "d3-dsv": "^2.0.0",
     "docx": "^9.5.1",
+    "docx-preview": "^0.3.7",
     "docxtemplater": "^3.51.0",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.31.2",
@@ -96,6 +97,7 @@
     "vaul": "^0.9.1",
     "voyageai": "^0.0.1-5",
     "word-extractor": "^1.0.4",
+    "xlsx": "^0.18.5",
     "xmldom": "^0.6.0",
     "zod": "^3.24.1"
   },
