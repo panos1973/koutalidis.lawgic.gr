@@ -19,9 +19,10 @@ import { useUser } from "@clerk/nextjs";
 
 interface Props {
   parentFolderId?: string;
+  onFolderCreated?: () => void;
 }
 
-const NewLibraryFolder: NextPage<Props> = ({ parentFolderId }) => {
+const NewLibraryFolder: NextPage<Props> = ({ parentFolderId, onFolderCreated }) => {
   const { user } = useUser();
   const [loading, setLoading] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -38,6 +39,7 @@ const NewLibraryFolder: NextPage<Props> = ({ parentFolderId }) => {
         setLoading(false);
         setFolderName("");
         setIsOpen(false);
+        onFolderCreated?.();
         return "Folder created successfully";
       },
       error: (error) => {

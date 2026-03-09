@@ -320,3 +320,11 @@ export const GENERAL_TOOLS = [
   //   route: '/standard-contract',
   // },
 ]
+
+export const VAULT_TOOL = {
+  id: 'vault',
+  name: 'Vault',
+  nameEl: 'Vault',
+  icon: 'archive',
+  route: '/vault',
+}

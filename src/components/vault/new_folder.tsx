@@ -15,9 +15,11 @@ import { toast } from "sonner";
 import { creatVaultFolder } from "@/app/[locale]/actions/vault_actions";
 import { Icons } from "../icons";
 import { useTranslations } from "next-intl";
-interface Props {}
+interface Props {
+  onFolderCreated?: () => void;
+}
 
-const CreateNewFolder: NextPage<Props> = () => {
+const CreateNewFolder: NextPage<Props> = ({ onFolderCreated }) => {
   const { userId } = useAuth();
   const [loading, setLoading] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -33,6 +35,7 @@ const CreateNewFolder: NextPage<Props> = () => {
         setLoading(false);
         setFolderName("");
         setIsOpen(false);
+        onFolderCreated?.();
         return "Folder created successfully";
       },
       error: (error) => {

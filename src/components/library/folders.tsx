@@ -28,6 +28,7 @@ import {
 import { getGreekGregoryDate } from "@/lib/utils";
 import CreateNewFolder from "./new_folder";
 import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 
 interface Props {
   folders: LibraryFolder[];
@@ -38,6 +39,7 @@ const LibraryFolders: NextPage<Props> = ({ folders, organizationId }) => {
   const locale = useLocale() || "el";
   const t = useTranslations("library");
   const auth = useAuth();
+  const router = useRouter();
   const [selectionEnabled, setSelectionEnabled] = useState<boolean>(false);
 
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
@@ -118,7 +120,7 @@ const LibraryFolders: NextPage<Props> = ({ folders, organizationId }) => {
                 {selectionEnabled ? t("cancel") : t("selectAll")}
               </Button>
             ))}
-          <CreateNewFolder />
+          <CreateNewFolder onFolderCreated={() => router.refresh()} />
         </div>
       </div>
 

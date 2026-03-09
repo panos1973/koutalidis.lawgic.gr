@@ -19,6 +19,7 @@ import {
   FilePlus,
   FolderOpen,
   BookOpen,
+  Archive,
   type LucideProps,
 } from 'lucide-react'
 
@@ -41,6 +42,7 @@ const ICON_MAP: Record<string, React.FC<LucideProps>> = {
   noteAdd: FilePlus,
   folderOpen: FolderOpen,
   book: BookOpen,
+  archive: Archive,
 }
 
 interface PracticeIconProps extends LucideProps {
