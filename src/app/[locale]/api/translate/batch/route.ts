@@ -111,14 +111,14 @@ Translate each numbered paragraph above to ${tgtName}. Return in format:
 ...`
 
   const totalChars = texts.reduce((sum, t) => sum + t.length, 0)
-  const maxOutputTokens = Math.max(2048, Math.min(totalChars * 2, 16384))
+  const maxTokens = Math.max(2048, Math.min(totalChars * 2, 16384))
 
   const result = await generateText({
     model: anthropic('claude-sonnet-4-6'),
     system: systemPrompt,
     messages: [{ role: 'user', content: userMessage }],
     temperature: 0.2,
-    maxOutputTokens,
+    maxTokens,
   })
 
   return parseNumberedTranslations(result.text, texts.length)
