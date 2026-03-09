@@ -13,6 +13,7 @@ import { getMessages } from "next-intl/server";
 import { elGR, enUS } from "@clerk/localizations";
 import { checkUsageLimits } from "./actions/subscription";
 import { headers } from "next/headers";
+import { UploadProvider } from "@/contexts/upload-context";
 
 const inter = Inter({ subsets: ["latin", "greek"], variable: "--font-inter" });
 
@@ -61,27 +62,29 @@ export default async function RootLayout({
             //   enableSystem
             //   disableTransitionOnChange
             >
-              {isKoutalidis ? (
-                // Koutalidis layout: the (koutalidis) route group handles its own header/sidebar
-                <div className="h-screen overflow-hidden">
-                  {children}
-                </div>
-              ) : (
-                // Corp layout: original navigation
-                <>
-                  <TopNavbar />
-                  <div className="flex flex-col md:flex-row">
-                    <div className="hidden md:block">
-                      <SideNavbar subscriptionData={subscriptionData} />
-                    </div>
-                    <div className="w-full h-[83svh]">{children}</div>
-                    <div className="md:hidden w-full  ">
-                      <MobileNavbar />
-                    </div>
+              <UploadProvider>
+                {isKoutalidis ? (
+                  // Koutalidis layout: the (koutalidis) route group handles its own header/sidebar
+                  <div className="h-screen overflow-hidden">
+                    {children}
                   </div>
-                </>
-              )}
-              <Toaster position="bottom-center" />
+                ) : (
+                  // Corp layout: original navigation
+                  <>
+                    <TopNavbar />
+                    <div className="flex flex-col md:flex-row">
+                      <div className="hidden md:block">
+                        <SideNavbar subscriptionData={subscriptionData} />
+                      </div>
+                      <div className="w-full h-[83svh]">{children}</div>
+                      <div className="md:hidden w-full  ">
+                        <MobileNavbar />
+                      </div>
+                    </div>
+                  </>
+                )}
+                <Toaster position="bottom-center" />
+              </UploadProvider>
             </ThemeProvider>
           </NextIntlClientProvider>
         </body>

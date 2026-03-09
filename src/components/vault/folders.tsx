@@ -28,6 +28,7 @@ import {
 } from "@/app/[locale]/actions/vault_actions";
 import { getGreekGregoryDate } from "@/lib/utils";
 import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 interface Props {
   folders: VaultFolder[];
   organizationId?: string;
@@ -37,6 +38,7 @@ const VaultFolders: NextPage<Props> = ({ folders, organizationId }) => {
   const locale = useLocale() || "el";
   const t = useTranslations("vault");
   const auth = useAuth();
+  const router = useRouter();
   const [selectionEnabled, setSelectionEnabled] = useState<boolean>(false);
 
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
@@ -135,7 +137,7 @@ const VaultFolders: NextPage<Props> = ({ folders, organizationId }) => {
         </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <CreateNewFolder />
+        <CreateNewFolder onFolderCreated={() => router.refresh()} />
         {folders.map((folder) => (
           <div key={folder.id} className="relative">
             {organizationId && folder.userId === auth.userId && (

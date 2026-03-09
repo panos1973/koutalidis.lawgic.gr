@@ -137,6 +137,10 @@ export const uploadVaultFile = async (
   folderId: string
 ) => {
   try {
+    if (!folderId) {
+      throw new Error("Cannot upload file without a valid folderId");
+    }
+
     const [uploadedFile] = await db
       .insert(vault_files)
       .values({
