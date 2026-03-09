@@ -77,14 +77,23 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                               <Link
                                 key={tool.id}
                                 href={`/${locale}/projects/${projectId}/${tool.id}`}
-                                className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                                className="flex items-start gap-2 px-2 py-1.5 rounded text-xs text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors group"
                               >
                                 <PracticeIcon
                                   iconName={tool.icon}
                                   size={12}
-                                  className="text-gray-400"
+                                  className="text-gray-400 mt-0.5 flex-shrink-0"
                                 />
-                                {locale === 'el' ? tool.nameEl : tool.name}
+                                <div>
+                                  <span className="font-medium">
+                                    {locale === 'el' ? tool.nameEl : tool.name}
+                                  </span>
+                                  {tool.description && (
+                                    <p className="text-[10px] text-gray-400 group-hover:text-gray-500 mt-0.5 leading-tight">
+                                      {locale === 'el' ? tool.descriptionEl : tool.description}
+                                    </p>
+                                  )}
+                                </div>
                               </Link>
                             ))}
                           </div>
