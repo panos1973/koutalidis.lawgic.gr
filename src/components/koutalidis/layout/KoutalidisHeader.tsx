@@ -33,8 +33,9 @@ export function KoutalidisHeader() {
       {/* Left: Logo + Practice Tools */}
       <div className="flex items-center gap-6">
         <Link href={`/${locale}/projects`} className="flex items-center gap-2">
+          <img src="/miniLogo.png" alt="Lawgic" className="h-6 w-6 object-contain" />
           <h6 className="font-semibold tracking-wider text-[#c5032a] uppercase text-sm">
-            &nbsp;
+            Lawgic
           </h6>
         </Link>
 

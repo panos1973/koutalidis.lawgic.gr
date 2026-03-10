@@ -23,12 +23,7 @@ export function KoutalidisSidebar() {
       )}
     >
       {/* Collapse toggle */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
-        {!sidebarCollapsed && (
-          <span className="text-xs font-medium text-gray-700 uppercase tracking-wider">
-            &nbsp;
-          </span>
-        )}
+      <div className="flex items-center justify-end px-3 py-2">
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           className="p-1 rounded hover:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
