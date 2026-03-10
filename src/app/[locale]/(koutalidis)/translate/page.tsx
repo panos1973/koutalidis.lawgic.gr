@@ -558,7 +558,7 @@ export default function TranslatePage() {
       }
 
       const prepareData = await prepareRes.json()
-      const { domain } = prepareData
+      const { domain, terminology } = prepareData
 
       // Phase 2: Translate paragraphs in batches (using the DOCX-extracted paragraphs)
       // Compute batch ranges client-side from actual DOCX paragraphs to maintain 1:1 mapping
@@ -579,7 +579,7 @@ export default function TranslatePage() {
 
         const translations = await fetchBatchWithRetry(
           `/${locale}/api/translate/batch`,
-          { texts: batchTexts, sourceLang, targetLang, domain },
+          { texts: batchTexts, sourceLang, targetLang, domain, terminology },
           batchIdx,
         )
         allTranslations.push(...translations)
@@ -691,11 +691,19 @@ export default function TranslatePage() {
       const {
         paragraphs,
         domain,
+        terminology,
         totalBatches,
         batchRanges,
       }: {
         paragraphs: string[]
         domain: { primaryDomain: string; secondaryDomain: string | null }
+        terminology: Array<{
+          sourceTerm: string
+          targetTerm: string
+          alternatives: Array<{ term: string; status: string }>
+          domains: string[]
+          reliability?: string
+        }>
         totalBatches: number
         batchRanges: Array<[number, number]>
       } = prepareData
@@ -715,7 +723,7 @@ export default function TranslatePage() {
 
         const translations = await fetchBatchWithRetry(
           `/${locale}/api/translate/batch`,
-          { texts: batchTexts, sourceLang, targetLang, domain },
+          { texts: batchTexts, sourceLang, targetLang, domain, terminology },
           batchIdx,
         )
         allTranslations.push(...translations)
