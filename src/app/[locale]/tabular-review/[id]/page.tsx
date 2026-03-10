@@ -41,6 +41,7 @@ export default async function TabularReviewDetailPage({
         initialColumns={columns}
         initialDocuments={documents}
         initialCells={cells}
+        userId={userId}
       />
     </Suspense>
   )

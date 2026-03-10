@@ -50,7 +50,17 @@ export async function POST(req: Request) {
 - If the requested information is not found in the document, state "Not found in document" (or "Δεν βρέθηκε στο έγγραφο" in Greek).
 - Do not make up or infer information that is not explicitly stated in the document.
 ${formatInstruction}
-${langInstruction}`
+${langInstruction}
+
+## Response Format
+You MUST respond with a valid JSON object in the following format:
+{
+  "answer": "Your extracted answer here",
+  "reasoning": "Brief explanation of how you arrived at this answer",
+  "sources": ["Exact quote from the document that supports this answer", "Another supporting quote if applicable"]
+}
+
+The "sources" array should contain 1-3 direct quotes from the document text that support your answer. Each quote should be short (1-2 sentences max). If the information is not found, use an empty array for sources.`
 
     const userPrompt = `## Document Text
 ${documentText.slice(0, 100000)}
@@ -65,11 +75,32 @@ ${columnPrompt}`
       maxTokens: 2048,
     })
 
+    // Parse structured response
+    let answer = result.text
+    let reasoning: string | null = null
+    let sources: string | null = null
+
+    try {
+      // Try to parse JSON response
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0])
+        answer = parsed.answer || result.text
+        reasoning = parsed.reasoning || null
+        sources = parsed.sources ? JSON.stringify(parsed.sources) : null
+      }
+    } catch {
+      // If JSON parsing fails, use the raw text as the answer
+      answer = result.text
+    }
+
     // Save result to cell
     await db
       .update(tabular_review_cells)
       .set({
-        value: result.text,
+        value: answer,
+        reasoning,
+        sources,
         status: 'completed',
         error: null,
         updatedAt: new Date(),
@@ -77,7 +108,7 @@ ${columnPrompt}`
       .where(eq(tabular_review_cells.id, cellId))
 
     return new Response(
-      JSON.stringify({ value: result.text, cellId }),
+      JSON.stringify({ value: answer, reasoning, sources, cellId }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
   } catch (error: any) {
