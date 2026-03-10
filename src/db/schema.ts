@@ -927,6 +927,25 @@ export const userAddOnsRelations = relations(userAddOns, ({ one }) => ({
   }),
 }))
 
+// ─── TRANSLATION HISTORY ──────────────────────────────────────────────
+export const translations = pgTable('translations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  title: text('title').notNull(),
+  sourceLang: text('source_lang').notNull(),
+  targetLang: text('target_lang').notNull(),
+  domain: text('domain'),
+  paragraphCount: integer('paragraph_count'),
+  sourcePreview: text('source_preview'), // First ~200 chars of source
+  translatedPreview: text('translated_preview'), // First ~200 chars of translation
+  sourceText: text('source_text'), // Full source (for text mode)
+  translatedText: text('translated_text'), // Full translation (for text mode)
+  userId: text('user_id').notNull(),
+  createdAt: timestamp('created_at', {
+    precision: 6,
+    withTimezone: true,
+  }).defaultNow(),
+})
+
 // Usage relations
 export const usageRelations = relations(usage, ({ one }) => ({
   subscription: one(subscriptions, {

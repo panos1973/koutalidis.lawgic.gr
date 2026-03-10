@@ -1,9 +1,9 @@
 'use client'
 
 import { useFocusMode } from './FocusModeProvider'
+import { useChatHistoryContext } from './ChatHistoryContext'
 import { cn } from '@/lib/utils'
 import { MessageSquare, Plus, X } from 'lucide-react'
-import { useTranslations } from 'next-intl'
 
 interface Conversation {
   id: string
@@ -19,12 +19,19 @@ interface ChatHistoryPanelProps {
 }
 
 export function ChatHistoryPanel({
-  conversations = [],
-  activeConversationId,
-  onSelectConversation,
-  onNewConversation,
+  conversations: propConversations,
+  activeConversationId: propActiveId,
+  onSelectConversation: propOnSelect,
+  onNewConversation: propOnNew,
 }: ChatHistoryPanelProps) {
   const { chatHistoryVisible, setChatHistoryVisible } = useFocusMode()
+  const ctx = useChatHistoryContext()
+
+  // Use props if provided, otherwise fall back to context
+  const conversations = propConversations ?? ctx?.conversations ?? []
+  const activeConversationId = propActiveId ?? ctx?.activeConversationId
+  const onSelectConversation = propOnSelect ?? ctx?.onSelectConversation
+  const onNewConversation = propOnNew ?? ctx?.onNewConversation
 
   if (!chatHistoryVisible) return null
 

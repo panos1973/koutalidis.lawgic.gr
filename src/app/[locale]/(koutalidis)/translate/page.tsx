@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react'
+import { useCallback, useEffect, useRef, useState, lazy, Suspense, useMemo } from 'react'
 import { useLocale } from 'next-intl'
 import {
   ArrowRightLeft,
@@ -18,6 +18,12 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { detectDocumentLanguage, type LangCode } from '@/lib/translate/detect-language'
+import { ChatHistoryContext } from '@/components/koutalidis/layout/ChatHistoryContext'
+import {
+  saveTranslation,
+  getTranslationHistory,
+  getTranslationById,
+} from '@/app/[locale]/actions/translation_actions'
 
 // Lazy-load the DOCX preview to avoid SSR issues with docx-preview
 const DocxPreview = lazy(() => import('@/components/translate/DocxPreview'))
@@ -258,11 +264,84 @@ export default function TranslatePage() {
   // DOCX document mode
   const [docxState, setDocxState] = useState<DocxState | null>(null)
 
+  // Translation history
+  const [historyItems, setHistoryItems] = useState<
+    Array<{ id: string; title: string; sourceLang: string; targetLang: string; domain: string | null; paragraphCount: number | null; createdAt: Date | null }>
+  >([])
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
 
   const isDocxMode = docxState !== null
+
+  // Fetch translation history on mount
+  const fetchHistory = useCallback(async () => {
+    try {
+      const items = await getTranslationHistory()
+      setHistoryItems(items)
+    } catch (err) {
+      console.error('Failed to load translation history:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchHistory()
+  }, [fetchHistory])
+
+  // Load a specific translation from history
+  const handleSelectHistory = useCallback(
+    async (id: string) => {
+      try {
+        const item = await getTranslationById(id)
+        setActiveHistoryId(id)
+        setSourceLang(item.sourceLang as LangCode)
+        setTargetLang(item.targetLang as LangCode)
+        setDocxState(null)
+
+        if (item.sourceText) {
+          setSourceText(item.sourceText)
+        }
+        if (item.translatedText) {
+          setResult({
+            translatedText: item.translatedText,
+            paragraphCount: item.paragraphCount ?? 0,
+            domain: {
+              primaryDomain: item.domain ?? 'legal',
+              secondaryDomain: null,
+            },
+          })
+        }
+      } catch (err) {
+        console.error('Failed to load translation:', err)
+      }
+    },
+    [],
+  )
+
+  // Context value for the ChatHistoryPanel
+  const historyContextValue = useMemo(
+    () => ({
+      conversations: historyItems.map((h) => ({
+        id: h.id,
+        title: h.title,
+        updatedAt: h.createdAt?.toISOString() ?? new Date().toISOString(),
+      })),
+      activeConversationId: activeHistoryId ?? undefined,
+      onSelectConversation: handleSelectHistory,
+      onNewConversation: () => {
+        setActiveHistoryId(null)
+        setResult(null)
+        setSourceText('')
+        setError(null)
+        setDetectedLang(null)
+        setLoadedFileName(null)
+        setDocxState(null)
+      },
+    }),
+    [historyItems, activeHistoryId, handleSelectHistory],
+  )
 
   // Auto-detect language when text changes (debounced)
   useEffect(() => {
@@ -549,6 +628,21 @@ export default function TranslatePage() {
         paragraphCount: paragraphs.length,
         domain,
       })
+
+      // Save to history
+      const title = `${getLang(sourceLang).name} → ${getLang(targetLang).name}${docxState.fileName ? ` (${docxState.fileName})` : ''}`
+      saveTranslation({
+        title,
+        sourceLang,
+        targetLang,
+        domain: [domain.primaryDomain, domain.secondaryDomain].filter(Boolean).join(', '),
+        paragraphCount: paragraphs.length,
+        sourcePreview: paragraphs.slice(0, 3).join(' ').slice(0, 200),
+        translatedPreview: allTranslations.slice(0, 3).join(' ').slice(0, 200),
+      }).then((id) => {
+        setActiveHistoryId(id)
+        fetchHistory()
+      }).catch((err) => console.error('Failed to save translation:', err))
     } catch (err) {
       console.error('DOCX translation error:', err)
       setError(err instanceof Error ? err.message : t.errorTranslating)
@@ -636,6 +730,23 @@ export default function TranslatePage() {
         paragraphCount: paragraphs.length,
         domain,
       })
+
+      // Save to history (include full text for text-mode translations)
+      const title = `${getLang(sourceLang).name} → ${getLang(targetLang).name}`
+      saveTranslation({
+        title,
+        sourceLang,
+        targetLang,
+        domain: [domain.primaryDomain, domain.secondaryDomain].filter(Boolean).join(', '),
+        paragraphCount: paragraphs.length,
+        sourcePreview: sourceText.slice(0, 200),
+        translatedPreview: translatedText.slice(0, 200),
+        sourceText,
+        translatedText,
+      }).then((id) => {
+        setActiveHistoryId(id)
+        fetchHistory()
+      }).catch((err) => console.error('Failed to save translation:', err))
     } catch (err) {
       console.error('Translation error:', err)
       setError(err instanceof Error ? err.message : t.errorTranslating)
@@ -708,9 +819,16 @@ export default function TranslatePage() {
     ? docxState.paragraphs.length > 0 && sourceLang !== targetLang
     : sourceText.trim().length > 0 && sourceLang !== targetLang
 
+  // ─── Wrap all views with the history context provider ─────────────
+  const wrapWithHistory = (content: React.ReactNode) => (
+    <ChatHistoryContext.Provider value={historyContextValue}>
+      {content}
+    </ChatHistoryContext.Provider>
+  )
+
   // ─── Loading state with progress ──────────────────────────────────
   if (isTranslating) {
-    return (
+    return wrapWithHistory(
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         <Loader2 className="w-8 h-8 animate-spin text-gray-400 mb-4" />
         <p className="text-sm font-medium text-gray-700 mb-1">
@@ -755,7 +873,7 @@ export default function TranslatePage() {
 
   // ─── Results view ─────────────────────────────────────────────────
   if (result) {
-    return (
+    return wrapWithHistory(
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-5xl mx-auto">
@@ -892,7 +1010,7 @@ export default function TranslatePage() {
   }
 
   // ─── Main input view ──────────────────────────────────────────────
-  return (
+  return wrapWithHistory(
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto">
