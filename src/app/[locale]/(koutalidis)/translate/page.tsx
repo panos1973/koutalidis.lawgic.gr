@@ -22,6 +22,34 @@ import { detectDocumentLanguage, type LangCode } from '@/lib/translate/detect-la
 // Lazy-load the DOCX preview to avoid SSR issues with docx-preview
 const DocxPreview = lazy(() => import('@/components/translate/DocxPreview'))
 
+/**
+ * Compute adaptive batch ranges based on paragraph count AND character count.
+ * Keeps each batch small enough to translate within the Vercel timeout.
+ */
+function computeBatchRanges(
+  paragraphs: string[],
+  maxParagraphs = 15,
+  maxChars = 6000,
+): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  let start = 0
+  while (start < paragraphs.length) {
+    let end = start
+    let charCount = 0
+    while (end < paragraphs.length) {
+      const nextChars = charCount + paragraphs[end].length
+      if (end > start && (end - start >= maxParagraphs || nextChars > maxChars)) {
+        break
+      }
+      charCount = nextChars
+      end++
+    }
+    ranges.push([start, end])
+    start = end
+  }
+  return ranges
+}
+
 // ─── Supported languages ────────────────────────────────────────────
 interface Language {
   code: LangCode
@@ -407,17 +435,17 @@ export default function TranslatePage() {
       }
 
       const prepareData = await prepareRes.json()
-      const { domain, batchSize } = prepareData
+      const { domain } = prepareData
 
       // Phase 2: Translate paragraphs in batches (using the DOCX-extracted paragraphs)
-      const totalBatches = Math.ceil(paragraphs.length / batchSize)
+      // Compute batch ranges client-side from actual DOCX paragraphs to maintain 1:1 mapping
+      const batchRanges = computeBatchRanges(paragraphs)
+      const totalBatches = batchRanges.length
       const allTranslations: string[] = []
 
       for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-        const batchTexts = paragraphs.slice(
-          batchIdx * batchSize,
-          (batchIdx + 1) * batchSize,
-        )
+        const [rangeStart, rangeEnd] = batchRanges[batchIdx]
+        const batchTexts = paragraphs.slice(rangeStart, rangeEnd)
 
         setProgress({
           phase: 'translating',
@@ -540,21 +568,19 @@ export default function TranslatePage() {
         paragraphs,
         domain,
         totalBatches,
-        batchSize,
+        batchRanges,
       }: {
         paragraphs: string[]
         domain: { primaryDomain: string; secondaryDomain: string | null }
         totalBatches: number
-        batchSize: number
+        batchRanges: Array<[number, number]>
       } = prepareData
 
       const allTranslations: string[] = []
 
       for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-        const batchTexts = paragraphs.slice(
-          batchIdx * batchSize,
-          (batchIdx + 1) * batchSize,
-        )
+        const [rangeStart, rangeEnd] = batchRanges[batchIdx]
+        const batchTexts = paragraphs.slice(rangeStart, rangeEnd)
 
         setProgress({
           phase: 'translating',
