@@ -22,7 +22,7 @@ const LANG_NAMES: Record<LangCode, string> = {
  * Called once per batch by the client — each call completes well within
  * Vercel's function timeout (even for very large documents).
  */
-export const maxDuration = 120
+export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
   try {

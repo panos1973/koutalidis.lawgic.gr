@@ -4,7 +4,7 @@ import { detectLegalDomain } from '@/lib/translate/detect-legal-domain'
 import { splitLegalSentences } from '@/lib/translate/split-sentences'
 
 /** Max paragraphs per batch — must match what the client uses to slice */
-const BATCH_SIZE = 40
+const BATCH_SIZE = 20
 
 /**
  * POST /api/translate/prepare
