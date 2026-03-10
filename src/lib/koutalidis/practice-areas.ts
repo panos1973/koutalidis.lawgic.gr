@@ -15,7 +15,7 @@ export interface PracticeTool {
   description: string
   descriptionEl: string
   icon: string
-  toolType: 'document-generation' | 'document-review' | 'translation' | 'general'
+  toolType: 'document-generation' | 'document-review' | 'general'
   apiRoute: string
   systemPromptKey?: string
 }
@@ -34,8 +34,6 @@ export const TOOL_API_ROUTES: Record<string, string> = {
   'programme-review': '/api/banking/document-review',
   'query-review': '/api/banking/document-review',
   'dd-review': '/api/banking/document-review',
-  // Banking — Translation
-  'en-gr-translation': '/api/banking/translation',
   // M&A
   'dd-report': '/api/ma/document-generation',
   'red-flag-analysis': '/api/ma/document-review',
@@ -239,20 +237,6 @@ export const PRACTICE_TOOLS_BY_AREA: Record<
         apiRoute: '/api/banking/document-review',
       },
     ],
-    Translation: [
-      {
-        id: 'en-gr-translation',
-        practiceAreaId: 'banking',
-        category: 'Translation',
-        name: 'EN↔GR Translation',
-        nameEl: 'Μετάφραση EN↔GR',
-        description: 'Translate security documents with established legal terminology for official filings',
-        descriptionEl: 'Μετάφραση εγγράφων εξασφαλίσεων με καθιερωμένη νομική ορολογία για επίσημες καταθέσεις',
-        icon: 'languages',
-        toolType: 'translation',
-        apiRoute: '/api/banking/translation',
-      },
-    ],
   },
   ma: {
     'Due Diligence': [
@@ -327,13 +311,6 @@ export const PRACTICE_TOOLS_BY_AREA: Record<
 // General tools (existing platform tools)
 export const GENERAL_TOOLS = [
   {
-    id: 'translate',
-    name: 'Legal Translation',
-    nameEl: 'Νομική Μετάφραση',
-    icon: 'languages',
-    route: '/translate',
-  },
-  {
     id: 'lawbot',
     name: 'Legal Research',
     nameEl: 'Νομική Έρευνα',
@@ -374,6 +351,13 @@ export const GENERAL_TOOLS = [
     nameEl: 'Tabular Review',
     icon: 'table',
     route: '/tabular-review',
+  },
+  {
+    id: 'translate',
+    name: 'Legal Translation',
+    nameEl: 'Νομική Μετάφραση',
+    icon: 'languages',
+    route: '/translate',
   },
   // {
   //   id: 'standard-contract',

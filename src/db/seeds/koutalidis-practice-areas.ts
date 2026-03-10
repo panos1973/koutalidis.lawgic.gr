@@ -170,18 +170,6 @@ export const BANKING_TOOLS = [
     sortOrder: 3,
     toolType: 'document-review',
   },
-  // Translation
-  {
-    id: 'en-gr-translation',
-    practiceAreaId: 'banking',
-    category: 'Translation',
-    name: 'EN↔GR Translation',
-    nameEl: 'Μετάφραση EN↔GR',
-    description: 'Translate security documents with established legal terminology for official filings',
-    icon: 'languages',
-    sortOrder: 1,
-    toolType: 'translation',
-  },
 ]
 
 export const MA_TOOLS = [

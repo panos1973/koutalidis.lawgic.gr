@@ -205,25 +205,6 @@ export const TOOL_WELCOME_MESSAGES: Record<string, WelcomeMessage> = {
     ],
   },
 
-  'en-gr-translation': {
-    title: 'Legal Translation EN↔GR',
-    titleEl: 'Νομική Μετάφραση EN↔GR',
-    description:
-      'Upload English security documents along with any precedent Greek translations, and I will produce a legally accurate Greek translation using established terminology.',
-    descriptionEl:
-      'Ανεβάστε αγγλικά έγγραφα εξασφαλίσεων μαζί με τυχόν προηγούμενες ελληνικές μεταφράσεις, και θα δημιουργήσω νομικά ακριβή ελληνική μετάφραση με καθιερωμένη ορολογία.',
-    steps: [
-      'Upload the English security document(s) to be translated',
-      'Upload any precedent Greek translations of similar documents (to ensure terminology consistency)',
-      'Specify if there are any firm-specific terminology preferences',
-    ],
-    stepsEl: [
-      'Ανεβάστε τα αγγλικά έγγραφα εξασφαλίσεων προς μετάφραση',
-      'Ανεβάστε τυχόν προηγούμενες ελληνικές μεταφράσεις παρόμοιων εγγράφων (για συνέπεια ορολογίας)',
-      'Προσδιορίστε τυχόν προτιμήσεις ορολογίας του γραφείου',
-    ],
-  },
-
   // --- M&A Tools ---
 
   'dd-report': {
