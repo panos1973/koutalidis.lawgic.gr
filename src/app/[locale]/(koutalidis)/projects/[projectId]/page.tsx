@@ -113,7 +113,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       {/* General tools */}
       <div>
         <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">
-          General Tools
+          Γενικά Εργαλεία
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {GENERAL_TOOLS.map((tool) => (

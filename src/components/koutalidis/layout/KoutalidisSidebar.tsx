@@ -26,7 +26,7 @@ export function KoutalidisSidebar() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
         {!sidebarCollapsed && (
           <span className="text-xs font-medium text-gray-700 uppercase tracking-wider">
-            Navigation
+            LAWGIC
           </span>
         )}
         <button
