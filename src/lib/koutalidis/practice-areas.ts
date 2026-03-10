@@ -370,8 +370,8 @@ export const GENERAL_TOOLS = [
 
 export const VAULT_TOOL = {
   id: 'vault',
-  name: 'Vault',
-  nameEl: 'Vault',
+  name: 'Files',
+  nameEl: 'Αρχεία',
   icon: 'archive',
   route: '/vault',
 }

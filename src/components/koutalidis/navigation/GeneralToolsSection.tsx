@@ -72,8 +72,8 @@ export function GeneralToolsSection() {
             )
           })}
 
-          {/* Vault — separated by a thin line */}
-          <div className="mt-5 mb-4 border-t border-gray-300" />
+          {/* Files — separated by a thin line */}
+          <div className="mt-8 mb-6 border-t border-gray-300" />
           <Link
             href={`/${locale}${VAULT_TOOL.route}`}
             className={cn(
