@@ -42,7 +42,7 @@ export function GeneralToolsSection() {
         onClick={toggleExpanded}
         className="flex items-center justify-between w-full text-xs font-medium text-gray-700 uppercase tracking-wider hover:text-gray-900 transition-colors"
       >
-        <span>General Tools</span>
+        <span>Γενικά Εργαλεία</span>
         {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
       </button>
 

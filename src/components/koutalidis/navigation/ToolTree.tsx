@@ -52,7 +52,7 @@ export function ToolTree() {
   return (
     <div className="px-3 py-2">
       <p className="text-xs font-medium text-gray-700 uppercase tracking-wider mb-2">
-        Practice Tools
+        Εργαλεία ανά Practice
       </p>
 
       <div className="space-y-0.5">

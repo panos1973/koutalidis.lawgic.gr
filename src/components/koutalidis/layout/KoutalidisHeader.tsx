@@ -44,7 +44,7 @@ export function KoutalidisHeader() {
             onClick={() => setMegaMenuOpen(!megaMenuOpen)}
             className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors px-3 py-1.5 rounded-md hover:bg-gray-50"
           >
-            Practice Tools
+            Εργαλεία ανά Practice
             <ChevronDown
               size={14}
               className={`transition-transform ${megaMenuOpen ? 'rotate-180' : ''}`}
