@@ -34,7 +34,7 @@ export function KoutalidisHeader() {
       <div className="flex items-center gap-6">
         <Link href={`/${locale}/projects`} className="flex items-center gap-2">
           <h6 className="font-semibold tracking-wider text-[#c5032a] uppercase text-sm">
-            Koutalidis
+            &nbsp;
           </h6>
         </Link>
 
