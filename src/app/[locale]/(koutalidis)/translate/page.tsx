@@ -22,6 +22,78 @@ import { detectDocumentLanguage, type LangCode } from '@/lib/translate/detect-la
 // Lazy-load the DOCX preview to avoid SSR issues with docx-preview
 const DocxPreview = lazy(() => import('@/components/translate/DocxPreview'))
 
+/**
+ * Compute adaptive batch ranges based on paragraph count AND character count.
+ * Keeps each batch small enough to translate within the Vercel timeout.
+ */
+function computeBatchRanges(
+  paragraphs: string[],
+  maxParagraphs = 15,
+  maxChars = 6000,
+): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  let start = 0
+  while (start < paragraphs.length) {
+    let end = start
+    let charCount = 0
+    while (end < paragraphs.length) {
+      const nextChars = charCount + paragraphs[end].length
+      if (end > start && (end - start >= maxParagraphs || nextChars > maxChars)) {
+        break
+      }
+      charCount = nextChars
+      end++
+    }
+    ranges.push([start, end])
+    start = end
+  }
+  return ranges
+}
+
+/** Fetch a single batch with up to 2 retries on 5xx / network errors */
+async function fetchBatchWithRetry(
+  url: string,
+  body: object,
+  batchIdx: number,
+): Promise<string[]> {
+  const MAX_RETRIES = 2
+  const RETRY_DELAYS = [3000, 6000] // 3s, 6s
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      if (res.ok) {
+        const { translations }: { translations: string[] } = await res.json()
+        return translations
+      }
+
+      // Retry on 5xx (gateway timeout, server error), not on 4xx
+      if (res.status >= 500 && attempt < MAX_RETRIES) {
+        console.warn(`[Translation] Batch ${batchIdx + 1} failed (${res.status}), retry ${attempt + 1}/${MAX_RETRIES}...`)
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]))
+        continue
+      }
+
+      const errData = await res.json().catch(() => null)
+      throw new Error(errData?.error || `Batch ${batchIdx + 1} failed (${res.status})`)
+    } catch (err) {
+      if (attempt < MAX_RETRIES && !(err instanceof Error && !err.message.includes('failed ('))) {
+        console.warn(`[Translation] Batch ${batchIdx + 1} network error, retry ${attempt + 1}/${MAX_RETRIES}...`)
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]))
+        continue
+      }
+      throw err
+    }
+  }
+
+  throw new Error(`Batch ${batchIdx + 1} failed after ${MAX_RETRIES + 1} attempts`)
+}
+
 // ─── Supported languages ────────────────────────────────────────────
 interface Language {
   code: LangCode
@@ -407,17 +479,17 @@ export default function TranslatePage() {
       }
 
       const prepareData = await prepareRes.json()
-      const { domain, batchSize } = prepareData
+      const { domain } = prepareData
 
       // Phase 2: Translate paragraphs in batches (using the DOCX-extracted paragraphs)
-      const totalBatches = Math.ceil(paragraphs.length / batchSize)
+      // Compute batch ranges client-side from actual DOCX paragraphs to maintain 1:1 mapping
+      const batchRanges = computeBatchRanges(paragraphs)
+      const totalBatches = batchRanges.length
       const allTranslations: string[] = []
 
       for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-        const batchTexts = paragraphs.slice(
-          batchIdx * batchSize,
-          (batchIdx + 1) * batchSize,
-        )
+        const [rangeStart, rangeEnd] = batchRanges[batchIdx]
+        const batchTexts = paragraphs.slice(rangeStart, rangeEnd)
 
         setProgress({
           phase: 'translating',
@@ -426,25 +498,11 @@ export default function TranslatePage() {
           totalBatches,
         })
 
-        const batchRes = await fetch(`/${locale}/api/translate/batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            texts: batchTexts,
-            sourceLang,
-            targetLang,
-            domain,
-          }),
-        })
-
-        if (!batchRes.ok) {
-          const errData = await batchRes.json().catch(() => null)
-          throw new Error(
-            errData?.error || `Batch ${batchIdx + 1} failed (${batchRes.status})`,
-          )
-        }
-
-        const { translations }: { translations: string[] } = await batchRes.json()
+        const translations = await fetchBatchWithRetry(
+          `/${locale}/api/translate/batch`,
+          { texts: batchTexts, sourceLang, targetLang, domain },
+          batchIdx,
+        )
         allTranslations.push(...translations)
       }
 
@@ -540,21 +598,19 @@ export default function TranslatePage() {
         paragraphs,
         domain,
         totalBatches,
-        batchSize,
+        batchRanges,
       }: {
         paragraphs: string[]
         domain: { primaryDomain: string; secondaryDomain: string | null }
         totalBatches: number
-        batchSize: number
+        batchRanges: Array<[number, number]>
       } = prepareData
 
       const allTranslations: string[] = []
 
       for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-        const batchTexts = paragraphs.slice(
-          batchIdx * batchSize,
-          (batchIdx + 1) * batchSize,
-        )
+        const [rangeStart, rangeEnd] = batchRanges[batchIdx]
+        const batchTexts = paragraphs.slice(rangeStart, rangeEnd)
 
         setProgress({
           phase: 'translating',
@@ -563,25 +619,11 @@ export default function TranslatePage() {
           totalBatches,
         })
 
-        const batchRes = await fetch(`/${locale}/api/translate/batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            texts: batchTexts,
-            sourceLang,
-            targetLang,
-            domain,
-          }),
-        })
-
-        if (!batchRes.ok) {
-          const errData = await batchRes.json().catch(() => null)
-          throw new Error(
-            errData?.error || `Batch ${batchIdx + 1} failed (${batchRes.status})`,
-          )
-        }
-
-        const { translations }: { translations: string[] } = await batchRes.json()
+        const translations = await fetchBatchWithRetry(
+          `/${locale}/api/translate/batch`,
+          { texts: batchTexts, sourceLang, targetLang, domain },
+          batchIdx,
+        )
         allTranslations.push(...translations)
       }
 
