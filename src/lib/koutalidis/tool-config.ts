@@ -28,9 +28,6 @@ export const TOOL_MAX_TOKENS: Record<string, ToolConfig> = {
   'query-review': { maxTokens: 16384 },
   'dd-review': { maxTokens: 65536 }, // Full DD report across multiple documents
 
-  // --- Translation ---
-  'en-gr-translation': { maxTokens: 65536 }, // Full document translations
-
   // --- M&A: Due Diligence ---
   'dd-report': { maxTokens: 65536 }, // Full DD report across multiple workstreams
   'red-flag-analysis': { maxTokens: 32768 }, // Concise red flag summary

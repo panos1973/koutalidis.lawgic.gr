@@ -55,7 +55,7 @@ export const practice_tools = pgTable('practice_tools', {
   sortOrder: integer('sort_order').default(0),
   isActive: boolean('is_active').default(true),
   // The tool type determines which chat API route to use
-  toolType: text('tool_type').notNull(), // 'document-generation' | 'document-review' | 'translation' | 'general'
+  toolType: text('tool_type').notNull(), // 'document-generation' | 'document-review' | 'general'
   // System prompt template ID or inline prompt
   systemPromptId: text('system_prompt_id'),
   config: jsonb('config'), // Tool-specific configuration
