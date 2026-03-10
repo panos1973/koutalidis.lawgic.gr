@@ -47,7 +47,8 @@ export function GeneralToolsSection() {
       </button>
 
       {expanded && (
-        <div className="mt-2 space-y-0.5">
+        <div className="mt-2">
+          <div className="space-y-0.5">
           {GENERAL_TOOLS.map((tool) => {
             const isActive = pathname.includes(tool.route)
 
@@ -71,6 +72,7 @@ export function GeneralToolsSection() {
               </Link>
             )
           })}
+          </div>
 
           {/* Files — separated by a thin line */}
           <div className="mt-8 mb-6 border-t border-gray-300" />
