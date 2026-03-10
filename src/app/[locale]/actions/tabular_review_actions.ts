@@ -222,6 +222,63 @@ export async function updateCellValue(
   revalidatePath(`/${locale}/tabular-review`)
 }
 
+export async function updateCellReviewStatus(
+  cellId: string,
+  isReviewed: boolean,
+  userId: string
+) {
+  const locale = getLocaleFromCookies()
+  await db
+    .update(tabular_review_cells)
+    .set({
+      isReviewed,
+      reviewedBy: isReviewed ? userId : null,
+      reviewedAt: isReviewed ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(tabular_review_cells.id, cellId))
+  revalidatePath(`/${locale}/tabular-review`)
+}
+
+export async function updateCellLockStatus(
+  cellId: string,
+  isLocked: boolean
+) {
+  const locale = getLocaleFromCookies()
+  await db
+    .update(tabular_review_cells)
+    .set({
+      isLocked,
+      updatedAt: new Date(),
+    })
+    .where(eq(tabular_review_cells.id, cellId))
+  revalidatePath(`/${locale}/tabular-review`)
+}
+
+export async function toggleRowReviewStatus(
+  reviewId: string,
+  documentId: string,
+  isReviewed: boolean,
+  userId: string
+) {
+  const locale = getLocaleFromCookies()
+  await db
+    .update(tabular_review_cells)
+    .set({
+      isReviewed,
+      reviewedBy: isReviewed ? userId : null,
+      reviewedAt: isReviewed ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(tabular_review_cells.reviewId, reviewId),
+        eq(tabular_review_cells.documentId, documentId)
+      )
+    )
+  revalidatePath(`/${locale}/tabular-review`)
+}
+
 export async function updateCellStatus(
   cellId: string,
   status: string,

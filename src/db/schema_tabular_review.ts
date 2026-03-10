@@ -86,10 +86,17 @@ export const tabular_review_cells = pgTable('tabular_review_cells', {
     .notNull()
     .references(() => tabular_review_columns.id, { onDelete: 'cascade' }),
   value: text('value'), // The extracted/generated text
+  reasoning: text('reasoning'), // AI reasoning for the extracted value
+  sources: text('sources'), // Source passages from the document (JSON array)
   status: text('status').default('pending'), // 'pending' | 'running' | 'completed' | 'error'
   error: text('error'), // Error message if extraction failed
   // Whether the user has manually edited this cell
   isManualEdit: boolean('is_manual_edit').default(false),
+  // Review workflow
+  isReviewed: boolean('is_reviewed').default(false), // Human-verified
+  isLocked: boolean('is_locked').default(false), // Prevent accidental edits
+  reviewedBy: text('reviewed_by'), // userId who reviewed
+  reviewedAt: timestamp('reviewed_at', { precision: 6, withTimezone: true }),
   updatedAt: timestamp('updated_at', {
     precision: 6,
     withTimezone: true,
