@@ -29,10 +29,26 @@ export function AddColumnDialog({ onAdd, onClose, locale, language }: Props) {
     if (!label.trim()) return
     setIsGenerating(true)
     try {
-      // Generate a prompt based on the label using a simple heuristic
+      const res = await fetch(`/${locale}/api/tabular-review/generate-prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: label.trim(), language }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setPrompt(data.prompt)
+        if (data.format && FORMAT_OPTIONS.some((o) => o.value === data.format)) {
+          setFormat(data.format)
+        }
+      } else {
+        // Fallback to heuristic if API fails
+        const lang = language === 'el' ? 'Greek' : 'English'
+        setPrompt(generatePromptFromLabel(label, lang))
+      }
+    } catch {
+      // Fallback to heuristic if API fails
       const lang = language === 'el' ? 'Greek' : 'English'
-      const generated = generatePromptFromLabel(label, lang)
-      setPrompt(generated)
+      setPrompt(generatePromptFromLabel(label, lang))
     } finally {
       setIsGenerating(false)
     }
