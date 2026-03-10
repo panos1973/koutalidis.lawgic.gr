@@ -153,9 +153,21 @@ export async function searchTerminology(
     )
 
     const termRows = await getTerminologyRows()
-    console.log(`[Terminology] Using ${termRows.length} rows (cached)`)
+    console.log(`[Terminology] Loaded ${termRows.length} rows from PostgreSQL (cached=${_termCache !== null && Date.now() - _termCache.ts < TERM_CACHE_TTL_MS})`)
 
     const lowerText = text.toLowerCase()
+    const textPreview = text.slice(0, 200).replace(/\n/g, ' ')
+    console.log(`[Terminology] Input text preview: "${textPreview}…"`)
+
+    // Count how many rows have terms for this language pair
+    let rowsWithPair = 0
+    for (const row of termRows) {
+      if (!row.terms) continue
+      const src = row.terms[sourceLang as keyof typeof row.terms] ?? []
+      const tgt = row.terms[targetLang as keyof typeof row.terms] ?? []
+      if (src.length > 0 && tgt.length > 0) rowsWithPair++
+    }
+    console.log(`[Terminology] ${rowsWithPair} rows have terms for ${sourceLang}→${targetLang} pair`)
     const domainMatches: TermMatch[] = []
     const otherMatches: TermMatch[] = []
 
@@ -215,6 +227,20 @@ export async function searchTerminology(
     console.log(
       `[Terminology] Found ${combined.length} matching terms (${domainMatches.length} domain-specific, ${otherMatches.length} general)`,
     )
+
+    // Log each matched term with its translation
+    if (combined.length > 0) {
+      console.log(`[Terminology] ── Matched terms (${sourceLang}→${targetLang}) ──`)
+      for (const t of combined) {
+        const preferred = t.alternatives.find((a) => a.status === 'preferred')
+        const domainTag = t.domains.length > 0 ? ` [${t.domains.slice(0, 3).join(', ')}]` : ''
+        console.log(
+          `[Terminology]   "${t.sourceTerm}" → "${preferred?.term ?? t.targetTerm}" (${preferred ? 'preferred' : 'first-available'})${domainTag}`,
+        )
+      }
+      console.log(`[Terminology] ── End of matched terms ──`)
+    }
+
     return combined
   } catch (err) {
     console.error('[Terminology] Error:', err)
