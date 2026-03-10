@@ -14,13 +14,21 @@ const LANG_NAMES: Record<LangCode, string> = {
   fr: 'French',
 }
 
+interface TermMatchInput {
+  sourceTerm: string
+  targetTerm: string
+  alternatives: Array<{ term: string; status: string }>
+  domains: string[]
+  reliability?: string
+}
+
 /**
  * POST /api/translate/batch
  *
  * Phase 2 of batch translation.
- * Translates a single batch of paragraph texts using Claude.
- * Called once per batch by the client — each call completes well within
- * Vercel's function timeout (even for very large documents).
+ * Translates a single batch of paragraph texts using Claude,
+ * now with approved terminology from the IATE legal dictionary
+ * stored in PostgreSQL.
  */
 export const maxDuration = 300
 
@@ -32,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { texts, sourceLang, targetLang, domain, subscriptionId } = body
+    const { texts, sourceLang, targetLang, domain, terminology, subscriptionId } = body
 
     if (!Array.isArray(texts) || texts.length === 0) {
       return Response.json(
@@ -62,6 +70,7 @@ export async function POST(req: NextRequest) {
       srcName,
       tgtName,
       domainInfo,
+      terminology ?? [],
     )
 
     // Track usage
@@ -83,6 +92,7 @@ async function translateParagraphBatch(
   srcName: string,
   tgtName: string,
   domainInfo: string,
+  terminology: TermMatchInput[],
 ): Promise<string[]> {
   const numberedSource = texts
     .map((text, i) => `[${i + 1}] ${text}`)
@@ -99,19 +109,23 @@ Rules:
 6. Keep the same paragraph structure — if the source has one paragraph, the translation is one paragraph
 7. Do NOT merge or split paragraphs
 8. Do NOT add explanations or notes — return ONLY the numbered translations
-9. CRITICAL FORMATTING RULE: Reproduce the exact layout and structure of the source text. If numbered items (Roman numerals like I., II., III., IV., or Arabic numerals like 1., 2., 3., or letters like a., b.) appear on the same line as their associated text in the source, they MUST remain on the same line in the translation.`
+9. CRITICAL FORMATTING RULE: Reproduce the exact layout and structure of the source text. If numbered items (Roman numerals like I., II., III., IV., or Arabic numerals like 1., 2., 3., or letters like a., b.) appear on the same line as their associated text in the source, they MUST remain on the same line in the translation.
+10. When approved terminology is provided below, you MUST use those translations for the specified terms. Prefer "preferred" status terms over "admitted" alternatives.`
 
-  const userMessage = `## Source Paragraphs (${srcName})
-${numberedSource}
+  // Build the terminology section for the prompt
+  const terminologySection = buildTerminologySection(terminology)
 
-## Instructions
-Translate each numbered paragraph above to ${tgtName}. Return in format:
-[1] translation of paragraph 1
-[2] translation of paragraph 2
-...`
+  const userMessage = terminologySection
+    ? `${terminologySection}\n\n## Source Paragraphs (${srcName})\n${numberedSource}\n\n## Instructions\nTranslate each numbered paragraph above to ${tgtName}. Use the approved terminology when the terms appear. Return in format:\n[1] translation of paragraph 1\n[2] translation of paragraph 2\n...`
+    : `## Source Paragraphs (${srcName})\n${numberedSource}\n\n## Instructions\nTranslate each numbered paragraph above to ${tgtName}. Return in format:\n[1] translation of paragraph 1\n[2] translation of paragraph 2\n...`
 
   const totalChars = texts.reduce((sum, t) => sum + t.length, 0)
   const maxTokens = Math.max(2048, Math.min(totalChars * 2, 16384))
+
+  console.log(
+    `[Translation Batch] ${texts.length} paragraphs, ${terminology.length} terms, ` +
+      `maxTokens: ${maxTokens}, domain: ${domainInfo}`,
+  )
 
   const result = await generateText({
     model: anthropic('claude-sonnet-4-6'),
@@ -121,7 +135,42 @@ Translate each numbered paragraph above to ${tgtName}. Return in format:
     maxTokens,
   })
 
+  console.log(
+    `[Translation Batch] Done — input: ${result.usage?.promptTokens ?? '?'}, ` +
+      `output: ${result.usage?.completionTokens ?? '?'}, ` +
+      `finish: ${result.finishReason}`,
+  )
+
   return parseNumberedTranslations(result.text, texts.length)
+}
+
+/**
+ * Builds the "Approved Terminology" section for the Claude prompt.
+ * Shows each term with its preferred translation and alternatives.
+ */
+function buildTerminologySection(terminology: TermMatchInput[]): string {
+  if (!terminology || terminology.length === 0) return ''
+
+  const lines = terminology.map((t) => {
+    const preferred = t.alternatives.find((a) => a.status === 'preferred')
+    const others = t.alternatives
+      .filter((a) => a.status !== 'preferred' && a.term !== t.targetTerm)
+      .map((a) => `"${a.term}" (${a.status})`)
+      .join(' | ')
+
+    const domainTag =
+      t.domains.length > 0 ? ` [${t.domains.join(', ')}]` : ''
+
+    let line = `- "${t.sourceTerm}" → "${preferred?.term ?? t.targetTerm}" (preferred)`
+    if (others) {
+      line += ` | ${others}`
+    }
+    line += domainTag
+
+    return line
+  })
+
+  return `## Approved Terminology\nUse these translations when the terms appear:\n${lines.join('\n')}`
 }
 
 function parseNumberedTranslations(
