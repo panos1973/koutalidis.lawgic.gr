@@ -311,13 +311,6 @@ export const PRACTICE_TOOLS_BY_AREA: Record<
 // General tools (existing platform tools)
 export const GENERAL_TOOLS = [
   {
-    id: 'translate',
-    name: 'Legal Translation',
-    nameEl: 'Νομική Μετάφραση',
-    icon: 'languages',
-    route: '/translate',
-  },
-  {
     id: 'lawbot',
     name: 'Legal Research',
     nameEl: 'Νομική Έρευνα',
@@ -358,6 +351,13 @@ export const GENERAL_TOOLS = [
     nameEl: 'Tabular Review',
     icon: 'table',
     route: '/tabular-review',
+  },
+  {
+    id: 'translate',
+    name: 'Legal Translation',
+    nameEl: 'Νομική Μετάφραση',
+    icon: 'languages',
+    route: '/translate',
   },
   // {
   //   id: 'standard-contract',
