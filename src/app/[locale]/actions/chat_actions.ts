@@ -658,16 +658,20 @@ export async function storePendingReferences(
           const finalSummary =
             summary || getElementText('page_content').substring(0, 500) + '...'
           
-          // 🆕 Extract enhanced document URL
+          // Extract all source URL fields
           const documentUrl = getElementText('document_url') || ''
-          
-          // Capture pdf_url from both possible field names
           const pdfUrl =
             getElementText('pdf_url') || getElementText('PDF_URL') || ''
-          
+          const pdfPageUrl = getElementText('pdf_page_url') || ''
+          const fileUrl = getElementText('file_url') || ''
+          const sourceUrl = getElementText('source_url') || ''
+
           const ref = {
             ref_sequence: `REF_${nextSequence++}`,
-            pdf_url: documentUrl || pdfUrl, // 🆕 Smart priority
+            pdf_url: documentUrl || pdfUrl,
+            pdf_page_url: pdfPageUrl || '',
+            file_url: fileUrl || '',
+            source_url: sourceUrl || '',
             court: getElementText('court'),
             decision_number: getElementText('decision_number'),
             decision_date:

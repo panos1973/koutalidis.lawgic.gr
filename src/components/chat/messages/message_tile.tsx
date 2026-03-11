@@ -207,10 +207,13 @@ const MessageTile: NextPage<Props> = ({
         return
       }
 
-      if (reference.pdf_url) {
-        console.log('Message Tile - Handling PDF reference:', reference.pdf_url)
+      // Priority: pdf_page_url (has #page=N) > file_url (full PDF) > pdf_url (legacy)
+      const bestPdfUrl = reference.pdf_page_url || reference.file_url || reference.pdf_url
 
-        const formattedUrl = await formatPdfUrl(reference.pdf_url)
+      if (bestPdfUrl) {
+        console.log('Message Tile - Handling PDF reference:', bestPdfUrl)
+
+        const formattedUrl = await formatPdfUrl(bestPdfUrl)
         setSelectedContent({
           url: formattedUrl,
           title:

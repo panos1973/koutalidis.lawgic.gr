@@ -19,6 +19,9 @@ import Markdown from 'markdown-to-jsx'
 interface Reference {
   id: string
   pdf_url?: string | null
+  pdf_page_url?: string | null
+  file_url?: string | null
+  source_url?: string | null
   court?: string | null
   decision_number?: string | null
   decision_date?: string | null
@@ -209,12 +212,32 @@ export function References({
     return url
   }
 
+  const getBestPdfUrl = (ref: Reference): string | null => {
+    // Priority: pdf_page_url (has #page=N) > file_url (full PDF) > pdf_url (legacy)
+    return ref.pdf_page_url || ref.file_url || ref.pdf_url || null
+  }
+
+  const openPdf = (ref: Reference) => {
+    const pdfUrl = getBestPdfUrl(ref)
+    if (pdfUrl) {
+      // Open directly in new tab — Azure Blob PDFs render natively in browsers
+      window.open(pdfUrl, '_blank')
+    }
+  }
+
+  const openOfficialSource = (ref: Reference) => {
+    if (ref.source_url) {
+      window.open(ref.source_url, '_blank')
+    }
+  }
+
   const openContent = (ref: Reference) => {
-    if (ref.pdf_url) {
+    const pdfUrl = getBestPdfUrl(ref)
+    if (pdfUrl) {
       setIsLoading(true)
       setLoadError(false)
       setSelectedContent({
-        url: formatPdfUrl(ref.pdf_url),
+        url: formatPdfUrl(pdfUrl),
         title:
           ref.generated_name ||
           `${ref.court} - ${ref.decision_number || 'Document'}`,
@@ -380,31 +403,52 @@ export function References({
                                 </div>
 
                                 {/* Action Buttons */}
-                                <div className="flex items-center space-x-2 ml-4">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => openContent(ref)}
-                                    className="p-1 h-6 hover:bg-gray-200"
-                                    title={
-                                      ref.pdf_url ? 'Open PDF' : 'View Content'
-                                    }
-                                  >
-                                    <ExternalLinkIcon className="h-4 w-4 text-blue-600 hover:text-blue-800" />
-                                  </Button>
-                                  {/* <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleExpand(ref.id)}
-                            className="p-1 h-6 hover:bg-gray-200"
-                            title={expandedRefs.has(ref.id) ? 'Collapse' : 'Expand'}
-                          >
-                            {expandedRefs.has(ref.id) ? (
-                              <ChevronUpIcon className="h-4 w-4" />
-                            ) : (
-                              <ChevronDownIcon className="h-4 w-4" />
-                            )}
-                          </Button> */}
+                                <div className="flex items-center space-x-1 ml-4">
+                                  {/* View PDF button — opens pdf_page_url or file_url directly */}
+                                  {getBestPdfUrl(ref) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openPdf(ref)}
+                                      className="p-1 h-7 hover:bg-blue-50 text-xs gap-1"
+                                      title="View source PDF"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600">
+                                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                                        <polyline points="14 2 14 8 20 8"/>
+                                        <line x1="16" y1="13" x2="8" y2="13"/>
+                                        <line x1="16" y1="17" x2="8" y2="17"/>
+                                        <line x1="10" y1="9" x2="8" y2="9"/>
+                                      </svg>
+                                      <span className="text-red-700 font-medium">PDF</span>
+                                    </Button>
+                                  )}
+                                  {/* Official source link — opens ET.gr or other official source */}
+                                  {ref.source_url && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openOfficialSource(ref)}
+                                      className="p-1 h-7 hover:bg-green-50 text-xs gap-1"
+                                      title="View official source (ET.gr)"
+                                    >
+                                      <ExternalLinkIcon className="h-3.5 w-3.5 text-green-700" />
+                                      <span className="text-green-700 font-medium">ET.gr</span>
+                                    </Button>
+                                  )}
+                                  {/* Fallback: view content in modal if no PDF available */}
+                                  {!getBestPdfUrl(ref) && ref.full_text && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openContent(ref)}
+                                      className="p-1 h-7 hover:bg-gray-200 text-xs gap-1"
+                                      title="View content"
+                                    >
+                                      <ExternalLinkIcon className="h-3.5 w-3.5 text-blue-600" />
+                                      <span className="text-blue-700 font-medium">View</span>
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
 
