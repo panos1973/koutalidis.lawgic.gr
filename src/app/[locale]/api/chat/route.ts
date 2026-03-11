@@ -49,6 +49,8 @@ import {
 } from '@/lib/deepseekSearchUtils'
 import { searchYouComForLegal } from '@/lib/youComSearchUtils'
 import { retrieveCourtDecisionsFromWeaviate } from '@/lib/retrievers/weaviate_court_retriever'
+import { retrieveLawsFromWeaviate } from '@/lib/retrievers/weaviate_law_retriever'
+import { retrieveGraphContext } from '@/lib/retrievers/weaviate_graph_retriever'
 import Anthropic from '@anthropic-ai/sdk'
 import db from '@/db/drizzle'
 import {
@@ -1093,6 +1095,22 @@ export async function POST(req: Request) {
 
     const allSearchPromises: Promise<void>[] = []
 
+    // Helper: retrieve laws from Weaviate GreekLegalDocuments with Elasticsearch fallback
+    const retrieveLaws = async (query: string, maxChars: number) => {
+      try {
+        console.log('📚 Attempting Weaviate law retrieval (GreekLegalDocuments)...')
+        const weaviateResults = await retrieveLawsFromWeaviate(query, maxChars)
+        if (weaviateResults.aiVersions.length > 0) {
+          console.log(`✅ Weaviate law retrieval: ${weaviateResults.aiVersions.length} results`)
+          return weaviateResults
+        }
+        console.log('⚠️ Weaviate law search returned no results, falling back to Elasticsearch')
+      } catch (error) {
+        console.warn('⚠️ Weaviate law retrieval failed, falling back to Elasticsearch:', error)
+      }
+      return retrieveAndFilterData(query, 'greek_laws_collection', maxChars, 'voyage-3.5')
+    }
+
     // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback
     const retrieveCourtDecisions = async (maxChars: number) => {
       try {
@@ -1109,6 +1127,36 @@ export async function POST(req: Request) {
       return retrieveAndFilterData(userQuery, 'dev_greek_court', maxChars, undefined)
     }
 
+    // Helper: retrieve graph context for temporal/amendment queries
+    const retrieveGraphContextIfNeeded = async (): Promise<string> => {
+      if (
+        queryClassification.queryType !== 'temporal' ||
+        queryClassification.detectedLaws.length === 0
+      ) {
+        return ''
+      }
+      try {
+        console.log(`📊 Building graph context for temporal query (laws: ${queryClassification.detectedLaws.join(', ')})`)
+        const graphParts: string[] = []
+        // Build graph context for each detected law (limit to first 3)
+        for (const lawRef of queryClassification.detectedLaws.slice(0, 3)) {
+          const lawNumber = lawRef.match(/(\d+\/\d{4})/)?.[1]
+          if (!lawNumber) continue
+          const graphContext = await retrieveGraphContext(lawNumber, undefined, 30000)
+          if (graphContext.aiVersions.length > 0) {
+            graphParts.push(...graphContext.aiVersions)
+          }
+        }
+        if (graphParts.length > 0) {
+          console.log(`✅ Graph context built: ${graphParts.length} law graph(s)`)
+          return '\n\n' + graphParts.join('\n\n')
+        }
+      } catch (error) {
+        console.warn('⚠️ Graph context retrieval failed:', error)
+      }
+      return ''
+    }
+
     if (
       preferences.includeGreekLaws &&
       preferences.includeGreekCourtDecisions
@@ -1120,20 +1168,15 @@ export async function POST(req: Request) {
             const balancedMaxCaseChars = Math.floor(adjustedBudgets.maxCaseChars / 2)
 
             const [lawResults, caseResults] = await Promise.all([
-              retrieveAndFilterData(
-                userQuery,
-                'greek_laws_collection',
-                balancedMaxLawChars,
-                'voyage-3.5'
-              ),
+              retrieveLaws(userQuery, balancedMaxLawChars),
               retrieveCourtDecisions(balancedMaxCaseChars),
             ])
 
             law_data = lawResults
             pastcase_data = caseResults
-            console.log('✅ [ES+Weaviate] Data retrieval completed')
+            console.log('✅ [Weaviate+ES] Data retrieval completed')
           } catch (error) {
-            console.error('❌ [ES] Elasticsearch failed:', error)
+            console.error('❌ Data retrieval failed:', error)
           }
         })()
       )
@@ -1141,13 +1184,8 @@ export async function POST(req: Request) {
       allSearchPromises.push(
         (async () => {
           try {
-            law_data = await retrieveAndFilterData(
-              userQuery,
-              'greek_laws_collection',
-              adjustedBudgets.maxLawChars,
-              'voyage-3.5'
-            )
-            console.log('✅ [ES] Elasticsearch laws completed')
+            law_data = await retrieveLaws(userQuery, adjustedBudgets.maxLawChars)
+            console.log('✅ Weaviate/ES law search completed')
           } catch (error) {
             console.error('❌ [ES] Law search failed:', error)
           }
@@ -1237,6 +1275,18 @@ export async function POST(req: Request) {
       )
     }
 
+    // Add graph context retrieval for temporal queries (runs in parallel with other searches)
+    let graphContextResult = ''
+    allSearchPromises.push(
+      (async () => {
+        try {
+          graphContextResult = await retrieveGraphContextIfNeeded()
+        } catch (error) {
+          console.warn('⚠️ Graph context retrieval failed:', error)
+        }
+      })()
+    )
+
     await Promise.allSettled(allSearchPromises)
     console.log(
       `⏱️ All searches completed in ${Date.now() - parallelStartTime}ms`
@@ -1252,6 +1302,14 @@ export async function POST(req: Request) {
     combined_ai_versions = combinedResults.aiVersions
     combined_references = combinedResults.fullReferences
     combined_reference_types = combinedResults.referenceTypes
+
+    // Inject graph context (amendment chains, version history) into law results
+    if (graphContextResult) {
+      console.log(`📊 Injecting graph context (${graphContextResult.length} chars) into results`)
+      combined_ai_versions.unshift(graphContextResult)
+      combined_references.unshift(graphContextResult)
+      combined_reference_types.unshift('weaviate_graph')
+    }
 
     if (fileChunkIds && fileChunkIds.length > 0) {
       const result = await searchLibraryFiles(userQuery, fileChunkIds)
@@ -1546,7 +1604,23 @@ export async function POST(req: Request) {
 
             const allSearchPromises: Promise<void>[] = []
 
-            // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback
+            // Helper: retrieve laws from Weaviate with Elasticsearch fallback (tool path)
+            const retrieveLawsTool = async (query: string, maxChars: number) => {
+              try {
+                console.log('📚 Attempting Weaviate law retrieval (tool)...')
+                const weaviateResults = await retrieveLawsFromWeaviate(query, maxChars)
+                if (weaviateResults.aiVersions.length > 0) {
+                  console.log(`✅ Weaviate law retrieval (tool): ${weaviateResults.aiVersions.length} results`)
+                  return weaviateResults
+                }
+                console.log('⚠️ Weaviate law search returned no results, falling back to Elasticsearch')
+              } catch (error) {
+                console.warn('⚠️ Weaviate law retrieval failed, falling back to Elasticsearch:', error)
+              }
+              return retrieveAndFilterData(query, 'greek_laws_collection', maxChars, 'voyage-3.5')
+            }
+
+            // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback (tool path)
             const retrieveCourtDecisionsTool = async (maxChars: number) => {
               try {
                 console.log('📚 Attempting Weaviate court retrieval (tool)...')
@@ -1575,20 +1649,15 @@ export async function POST(req: Request) {
                     )
 
                     const [lawResults, caseResults] = await Promise.all([
-                      retrieveAndFilterData(
-                        userQuery,
-                        'greek_laws_collection',
-                        balancedMaxLawChars,
-                        'voyage-3.5'
-                      ),
+                      retrieveLawsTool(userQuery, balancedMaxLawChars),
                       retrieveCourtDecisionsTool(balancedMaxCaseChars),
                     ])
 
                     law_data = lawResults
                     pastcase_data = caseResults
-                    console.log('✅ [ES+Weaviate] Data retrieval completed')
+                    console.log('✅ [Weaviate+ES] Data retrieval completed (tool)')
                   } catch (error) {
-                    console.error('❌ [ES] Elasticsearch failed:', error)
+                    console.error('❌ Data retrieval failed (tool):', error)
                   }
                 })()
               )
@@ -1596,13 +1665,8 @@ export async function POST(req: Request) {
               allSearchPromises.push(
                 (async () => {
                   try {
-                    law_data = await retrieveAndFilterData(
-                      userQuery,
-                      'greek_laws_collection',
-                      adjustedBudgets.maxLawChars,
-                      'voyage-3.5'
-                    )
-                    console.log('✅ [ES] Elasticsearch laws completed')
+                    law_data = await retrieveLawsTool(userQuery, adjustedBudgets.maxLawChars)
+                    console.log('✅ Weaviate/ES law search completed (tool)')
                   } catch (error) {
                     console.error('❌ [ES] Law search failed:', error)
                   }
@@ -1909,12 +1973,16 @@ export async function POST(req: Request) {
                   preferences.includeGreekLaws &&
                   discoveredGaps.newLaws.length > 0
                 ) {
-                  const secondLawSearch = await retrieveAndFilterData(
-                    discoveredQuery,
-                    'greek_laws_collection',
-                    adjustedBudgets.maxLawChars / 2,
-                    'voyage-3.5'
-                  )
+                  // Try Weaviate first, fallback to Elasticsearch
+                  let secondLawSearch
+                  try {
+                    secondLawSearch = await retrieveLawsFromWeaviate(discoveredQuery, adjustedBudgets.maxLawChars / 2)
+                    if (secondLawSearch.aiVersions.length === 0) {
+                      secondLawSearch = await retrieveAndFilterData(discoveredQuery, 'greek_laws_collection', adjustedBudgets.maxLawChars / 2, 'voyage-3.5')
+                    }
+                  } catch {
+                    secondLawSearch = await retrieveAndFilterData(discoveredQuery, 'greek_laws_collection', adjustedBudgets.maxLawChars / 2, 'voyage-3.5')
+                  }
 
                   secondSearchResults = {
                     laws: secondLawSearch,

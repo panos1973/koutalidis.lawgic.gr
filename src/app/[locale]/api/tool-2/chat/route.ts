@@ -7,6 +7,7 @@ import { getLLMModel } from '@/lib/models/llmModelFactory'
 import { TOOL_2_PROMPTS } from '@/lib/prompts/tool_2'
 import { elasticsearchRetrieverHybridSearch } from '@/lib/retrievers/elasticsearch_retriever'
 import { weaviateCourtSearch } from '@/lib/retrievers/weaviate_court_retriever'
+import { weaviateLawSearch } from '@/lib/retrievers/weaviate_law_retriever'
 import { decodeEscapedString } from '@/lib/decoding'
 import { VoyageAIClient, VoyageAI } from 'voyageai'
 import { AISDKExporter } from 'langsmith/vercel'
@@ -194,14 +195,26 @@ export async function POST(req: Request) {
 
               let combined_retrieved_data: string[] = []
 
-              // Add Elasticsearch results based on preferences
+              // Add law search results — Weaviate GreekLegalDocuments first, ES fallback
               if (includeGreekLaws) {
-                const lawResults = await retrieveAndFilterData(
-                  userQuery,
-                  '0825_greek_laws_collection',
-                  max_law_characters_v2,
-                  'voyage-3.5-lite'
-                )
+                let lawResults: string[] = []
+                try {
+                  const weaviateLawResults = await weaviateLawSearch(userQuery, { limit: 20 })
+                  if (weaviateLawResults.length > 0) {
+                    lawResults = weaviateLawResults.map(r => r.fullReference).slice(0, Math.ceil(max_law_characters_v2 / 3000))
+                    console.log(`Greek Laws from Weaviate: ${lawResults.length}`)
+                  }
+                } catch (e) {
+                  console.warn('⚠️ Weaviate law search failed, using Elasticsearch fallback')
+                }
+                if (lawResults.length === 0) {
+                  lawResults = await retrieveAndFilterData(
+                    userQuery,
+                    '0825_greek_laws_collection',
+                    max_law_characters_v2,
+                    'voyage-3.5-lite'
+                  )
+                }
                 console.log('Greek Laws retrieved:', lawResults.length)
                 combined_retrieved_data = [...lawResults]
               }
