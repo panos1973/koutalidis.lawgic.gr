@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, lazy, Suspense, useMemo } from 'react'
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { useLocale } from 'next-intl'
 import {
   ArrowRightLeft,
@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { detectDocumentLanguage, type LangCode } from '@/lib/translate/detect-language'
-import { ChatHistoryContext } from '@/components/koutalidis/layout/ChatHistoryContext'
+import { useSetChatHistory } from '@/components/koutalidis/layout/ChatHistoryContext'
 import {
   saveTranslation,
   getTranslationHistory,
@@ -320,9 +320,12 @@ export default function TranslatePage() {
     [],
   )
 
-  // Context value for the ChatHistoryPanel
-  const historyContextValue = useMemo(
-    () => ({
+  // Push history data up to the layout-level ChatHistoryProvider
+  // so the sidebar ChatHistoryPanel can display it
+  const setChatHistory = useSetChatHistory()
+
+  useEffect(() => {
+    setChatHistory({
       conversations: historyItems.map((h) => ({
         id: h.id,
         title: h.title,
@@ -339,9 +342,13 @@ export default function TranslatePage() {
         setLoadedFileName(null)
         setDocxState(null)
       },
-    }),
-    [historyItems, activeHistoryId, handleSelectHistory],
-  )
+    })
+  }, [historyItems, activeHistoryId, handleSelectHistory, setChatHistory])
+
+  // Clean up history context when unmounting
+  useEffect(() => {
+    return () => setChatHistory(null)
+  }, [setChatHistory])
 
   // Auto-detect language when text changes (debounced)
   useEffect(() => {
@@ -827,16 +834,9 @@ export default function TranslatePage() {
     ? docxState.paragraphs.length > 0 && sourceLang !== targetLang
     : sourceText.trim().length > 0 && sourceLang !== targetLang
 
-  // ─── Wrap all views with the history context provider ─────────────
-  const wrapWithHistory = (content: React.ReactNode) => (
-    <ChatHistoryContext.Provider value={historyContextValue}>
-      {content}
-    </ChatHistoryContext.Provider>
-  )
-
   // ─── Loading state with progress ──────────────────────────────────
   if (isTranslating) {
-    return wrapWithHistory(
+    return (
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         <Loader2 className="w-8 h-8 animate-spin text-gray-400 mb-4" />
         <p className="text-sm font-medium text-gray-700 mb-1">
@@ -881,7 +881,7 @@ export default function TranslatePage() {
 
   // ─── Results view ─────────────────────────────────────────────────
   if (result) {
-    return wrapWithHistory(
+    return (
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-5xl mx-auto">
@@ -907,6 +907,13 @@ export default function TranslatePage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handleNewTranslation}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#c5032a] hover:bg-[#a5021f] rounded-lg transition-colors"
+                >
+                  <Languages className="w-3.5 h-3.5" />
+                  {t.newTranslation}
+                </button>
                 <button
                   onClick={handleCopy}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors"
@@ -1018,7 +1025,7 @@ export default function TranslatePage() {
   }
 
   // ─── Main input view ──────────────────────────────────────────────
-  return wrapWithHistory(
+  return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto">

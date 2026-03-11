@@ -92,11 +92,33 @@ export async function POST(req: NextRequest) {
 
     const t1 = Date.now()
 
+    console.log(
+      `[Translation Prepare] Domain detected: primary="${domain.primaryDomain}", ` +
+        `secondary="${domain.secondaryDomain ?? 'none'}", confidence="${domain.confidence}", ` +
+        `elapsed: ${t1 - t0}ms`,
+    )
+    console.log(
+      `[Translation Prepare] Raw terminology from PostgreSQL: ${terminology.length} terms found`,
+    )
+
     // Re-rank terminology: move domain-matching terms to the top
     const rankedTerminology = rankTerminologyByDomain(
       terminology,
       domain.primaryDomain,
       domain.secondaryDomain,
+    )
+
+    // Log re-ranking results
+    const primaryCount = rankedTerminology.filter((t) =>
+      t.domains.some(
+        (d) =>
+          d.toLowerCase().includes(domain.primaryDomain.toLowerCase()) ||
+          domain.primaryDomain.toLowerCase().includes(d.toLowerCase()),
+      ),
+    ).length
+    console.log(
+      `[Translation Prepare] Re-ranked terminology: ${primaryCount} domain-matched ("${domain.primaryDomain}"), ` +
+        `${rankedTerminology.length - primaryCount} general`,
     )
 
     // Build adaptive batch ranges based on both paragraph count and character count

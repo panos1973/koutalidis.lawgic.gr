@@ -2,6 +2,7 @@ import { FocusModeProvider } from '@/components/koutalidis/layout/FocusModeProvi
 import { KoutalidisHeader } from '@/components/koutalidis/layout/KoutalidisHeader'
 import { KoutalidisSidebar } from '@/components/koutalidis/layout/KoutalidisSidebar'
 import { ChatHistoryPanel } from '@/components/koutalidis/layout/ChatHistoryPanel'
+import { ChatHistoryProvider } from '@/components/koutalidis/layout/ChatHistoryContext'
 import { BreadcrumbBar } from '@/components/koutalidis/layout/BreadcrumbBar'
 
 export default function KoutalidisLayout({
@@ -15,11 +16,13 @@ export default function KoutalidisLayout({
         <KoutalidisHeader />
         <div className="flex flex-1 overflow-hidden">
           <KoutalidisSidebar />
-          <ChatHistoryPanel />
-          <main className="flex-1 flex flex-col overflow-hidden">
-            <BreadcrumbBar />
-            {children}
-          </main>
+          <ChatHistoryProvider>
+            <ChatHistoryPanel />
+            <main className="flex-1 flex flex-col overflow-hidden">
+              <BreadcrumbBar />
+              {children}
+            </main>
+          </ChatHistoryProvider>
         </div>
       </div>
     </FocusModeProvider>

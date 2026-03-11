@@ -127,6 +127,30 @@ Rules:
       `maxTokens: ${maxTokens}, domain: ${domainInfo}`,
   )
 
+  // Log the terminology section that will be injected into Claude's prompt
+  if (terminologySection) {
+    const termLines = terminologySection.split('\n').filter((l) => l.startsWith('- '))
+    console.log(
+      `[Translation Batch] ── Approved Terminology injected into prompt (${termLines.length} terms) ──`,
+    )
+    for (const line of termLines.slice(0, 20)) {
+      console.log(`[Translation Batch]   ${line}`)
+    }
+    if (termLines.length > 20) {
+      console.log(`[Translation Batch]   … and ${termLines.length - 20} more terms`)
+    }
+    console.log(`[Translation Batch] ── End terminology section ──`)
+  } else {
+    console.log(`[Translation Batch] No terminology injected (none provided)`)
+  }
+
+  // Log prompt size
+  const systemChars = systemPrompt.length
+  const userChars = userMessage.length
+  console.log(
+    `[Translation Batch] Prompt sizes: system=${systemChars} chars, user=${userChars} chars (total=${systemChars + userChars} chars)`,
+  )
+
   const result = await generateText({
     model: anthropic('claude-sonnet-4-6'),
     system: systemPrompt,
