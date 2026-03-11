@@ -3,6 +3,7 @@ import { generateText } from 'ai'
 import type { NextRequest } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
+import { translationRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
 
 type LangCode = 'el' | 'en' | 'fr'
 
@@ -38,6 +39,10 @@ export async function POST(req: NextRequest) {
     if (!userId) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // Rate limit: 8 requests/minute per user
+    const blocked = checkRateLimitOrRespond(translationRateLimit, userId)
+    if (blocked) return blocked
 
     const body = await req.json()
     const { texts, sourceLang, targetLang, domain, terminology, subscriptionId } = body

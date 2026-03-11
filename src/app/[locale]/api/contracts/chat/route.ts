@@ -16,6 +16,7 @@ import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
 import { revalidatePath } from 'next/cache'
 import { extractContentFromUrl } from '@/app/[locale]/actions/library_actions'
 import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
+import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
 
 export const maxDuration = 180
 const maxOutputTokenSize = 8192
@@ -123,6 +124,12 @@ export async function POST(req: Request) {
           selectedVaultFiles: originalVaultFiles,
         } = await req.json()
         console.log('Request parameters:', { contractId, model, locale })
+
+        // Rate limit: 10 requests/minute per user
+        const rateLimitKey = subscriptionId || contractId || 'anonymous'
+        const blocked = checkRateLimitOrRespond(chatRateLimit, rateLimitKey)
+        if (blocked) return blocked
+
         let cachedVaultFiles = []
         
         // Check if we have multiple contracts (max 3)

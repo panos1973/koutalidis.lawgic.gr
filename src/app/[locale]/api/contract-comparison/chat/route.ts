@@ -21,6 +21,7 @@ import { extractContentFromUrl } from '@/app/[locale]/actions/library_actions'
 import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
 import { revalidatePath } from 'next/cache'
 import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
+import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
 
 // ====================
 // CONFIGURATION
@@ -214,6 +215,11 @@ export async function POST(req: Request) {
     isCached = false,
     subscriptionId,
   } = requestBody
+
+  // Rate limit: 10 requests/minute per user
+  const rateLimitKey = subscriptionId || userEmail || 'anonymous'
+  const blocked = checkRateLimitOrRespond(chatRateLimit, rateLimitKey)
+  if (blocked) return blocked
 
   // Initialize streaming data
   const data = new StreamData()

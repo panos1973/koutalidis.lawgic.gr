@@ -59,23 +59,14 @@ interface SearchContext {
   temporalEmphasis?: boolean;
 }
 
-// === CONFIGURATION - FIXED API KEY HANDLING ===
+// === CONFIGURATION ===
 const CONFIG = {
-  // Use environment variable OR hardcoded key with proper escaping
-  API_KEY: process.env.YOUCOM_API_KEY ||
-           process.env.You_com_api ||
-           'ydc-sk-cf3700ca197e0cf0-Q7nZD16yX5mlViAPXNK5V0sA3MfKwgkx-a28af613',
-  API_URL: 'https://api.ydc-index.io/search', // Correct endpoint without /v1
+  API_KEY: process.env.YOUCOM_API_KEY || process.env.You_com_api || '',
+  API_URL: 'https://api.ydc-index.io/search',
   TIMEOUT: 35000,
   MAX_RETRIES: 2,
-  MAX_RESULTS: 20, // Increased from 10 to get more results
+  MAX_RESULTS: 20,
 };
-
-// Alternative: If the above doesn't work, try storing the key in parts
-const API_KEY_PART1 = 'ydc-sk-abc6226161e4cad0-NUkBk8NUFPZtWmG5N5s1e7BbTFRUUWXU-9d183b37';
-const API_KEY_PART2 = '<__>';
-const API_KEY_PART3 = '1S30vBETU8N2v5f4EV8pGIIF';
-const ALTERNATIVE_API_KEY = API_KEY_PART1 + API_KEY_PART2 + API_KEY_PART3;
 
 // === ENHANCED GREEK LEGAL DOMAINS ===
 const LEGAL_DOMAINS = {
@@ -563,7 +554,7 @@ async function performSearch(query: string, context?: SearchContext): Promise<St
   console.log('🌐 [YC] Starting You.com search with query:', query.substring(0, 50) + '...');
   
   // Use the alternative key if main CONFIG.API_KEY doesn't work
-  const apiKey = CONFIG.API_KEY || ALTERNATIVE_API_KEY;
+  const apiKey = CONFIG.API_KEY;
   
   // Log API configuration (mask the middle part of the key)
   console.log('🔑 [YC] API Key configured:', !!apiKey);
@@ -818,7 +809,7 @@ export async function searchYouComForLegal(
     return createEmptyResults(query, 'Search query cannot be empty');
   }
   
-  const apiKey = CONFIG.API_KEY || ALTERNATIVE_API_KEY;
+  const apiKey = CONFIG.API_KEY;
   
   if (!apiKey) {
     console.error('❌ You.com API key not configured');
@@ -858,7 +849,7 @@ export async function testYouComConnection(): Promise<{
   apiKeyLength?: number;
   apiKeyPreview?: string;
 }> {
-  const apiKey = CONFIG.API_KEY || ALTERNATIVE_API_KEY;
+  const apiKey = CONFIG.API_KEY;
   
   if (!apiKey) {
     return {
@@ -917,7 +908,7 @@ export function clearYouComCache(): void {
 }
 
 export function getYouComStatus() {
-  const apiKey = CONFIG.API_KEY || ALTERNATIVE_API_KEY;
+  const apiKey = CONFIG.API_KEY;
   return {
     configured: !!apiKey,
     rateLimit: 60,
@@ -941,7 +932,7 @@ export const youComCircuitBreaker = {
 };
 
 // Initialize
-const apiKey = CONFIG.API_KEY || ALTERNATIVE_API_KEY;
+const apiKey = CONFIG.API_KEY;
 if (!apiKey) {
   console.warn('⚠️ You.com API key not configured - set YOUCOM_API_KEY or You_com_api in .env');
 } else {

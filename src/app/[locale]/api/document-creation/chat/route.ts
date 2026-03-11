@@ -27,6 +27,7 @@ import {
 import { DOCUMENT_CREATION_PROMPTS } from '@/lib/prompts/document_creation'
 import { getTemplateByKey } from '@/lib/documentCreationTemplateUtils'
 import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
+import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
 
 export const maxDuration = 180
 
@@ -139,6 +140,12 @@ export async function POST(req: Request) {
     selectedTemplate,
     // documentMode = 'single',
   } = await req.json()
+
+  // Rate limit: 10 requests/minute per user
+  const rateLimitKey = subscriptionId || userEmail || 'anonymous'
+  const blocked = checkRateLimitOrRespond(chatRateLimit, rateLimitKey)
+  if (blocked) return blocked
+
   const data = new StreamData()
 
   // Get the user's actual query from the last message
