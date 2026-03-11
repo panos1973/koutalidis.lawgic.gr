@@ -832,6 +832,7 @@ export async function POST(req: Request) {
     console.log('❌ Error cleaning temp references:', error)
   }
 
+  try {
   const recentMessages = messages.slice(-MAX_RECENT_MESSAGES)
 
   console.log(
@@ -2564,4 +2565,16 @@ export async function POST(req: Request) {
   }
 
   return result.toDataStreamResponse()
+  } catch (error) {
+    console.error('❌ Unhandled error in chat POST:', error)
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'An unexpected error occurred',
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    )
+  }
 }
