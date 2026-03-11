@@ -79,7 +79,7 @@ const labels = {
     paragraphsTranslated: 'παράγραφοι μεταφράστηκαν',
     copy: 'Αντιγραφή',
     copied: 'Αντιγράφηκε!',
-    download: 'Λήψη .txt',
+    download: 'Λήψη .docx',
     downloadDocx: 'Λήψη .docx',
     detected: 'Εντοπίστηκε',
     document: 'κείμενο',
@@ -123,7 +123,7 @@ const labels = {
     paragraphsTranslated: 'paragraphs translated',
     copy: 'Copy',
     copied: 'Copied!',
-    download: 'Download .txt',
+    download: 'Download .docx',
     downloadDocx: 'Download .docx',
     detected: 'Detected',
     document: 'text',
@@ -425,12 +425,23 @@ export default function TranslatePage() {
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
       } else if (data.translatedText) {
-        // Download as TXT
-        const blob = new Blob([data.translatedText], { type: 'text/plain;charset=utf-8' })
-        const url = URL.createObjectURL(blob)
+        // Download as DOCX (generated from plain text)
+        const { Document, Paragraph, TextRun, Packer } = await import('docx')
+        const paragraphs = data.translatedText.split('\n').map(
+          (line: string) =>
+            new Paragraph({
+              children: [new TextRun({ text: line, size: 24 })],
+              spacing: { after: 120 },
+            })
+        )
+        const doc = new Document({
+          sections: [{ children: paragraphs }],
+        })
+        const buffer = await Packer.toBlob(doc)
+        const url = URL.createObjectURL(buffer)
         const a = document.createElement('a')
         a.href = url
-        a.download = `translation_${data.sourceLang}_to_${data.targetLang}.txt`
+        a.download = `translation_${data.sourceLang}_to_${data.targetLang}.docx`
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
@@ -728,13 +739,28 @@ export default function TranslatePage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleDownloadTxt = () => {
+  const handleDownloadTxt = async () => {
     if (!result?.translatedText) return
-    const blob = new Blob([result.translatedText], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
+    // Generate DOCX from plain text translation
+    const { Document, Paragraph, TextRun, Packer } = await import('docx')
+    const paragraphs = result.translatedText.split('\n').map(
+      (line: string) =>
+        new Paragraph({
+          children: [new TextRun({ text: line, size: 24 })],
+          spacing: { after: 120 },
+        })
+    )
+    const doc = new Document({
+      sections: [{ children: paragraphs }],
+    })
+    const buffer = await Packer.toBlob(doc)
+    const url = URL.createObjectURL(buffer)
     const a = document.createElement('a')
     a.href = url
-    a.download = `translation_${sourceLang}_to_${targetLang}.txt`
+    const baseName = loadedFileName
+      ? loadedFileName.replace(/\.[^.]+$/, '')
+      : `translation_${sourceLang}_to_${targetLang}`
+    a.download = `${baseName}_${targetLang}.docx`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -873,9 +899,9 @@ export default function TranslatePage() {
                 ) : (
                   <button
                     onClick={handleDownloadTxt}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#c5032a] hover:bg-[#a5021f] rounded-lg transition-colors"
                   >
-                    <Download className="w-3.5 h-3.5" />
+                    <FileDown className="w-3.5 h-3.5" />
                     {t.download}
                   </button>
                 )}
@@ -941,16 +967,7 @@ export default function TranslatePage() {
               </div>
             )}
 
-            {/* Also offer .txt download for DOCX mode */}
-            {docxState?.translatedDocxBase64 && (
-              <button
-                onClick={handleDownloadTxt}
-                className="mt-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                <Download className="w-3 h-3" />
-                {t.download}
-              </button>
-            )}
+            {/* Secondary plain-text DOCX download removed — main button already generates DOCX */}
 
             {/* New translation button */}
             <button
