@@ -432,7 +432,9 @@ export const createPostgressVectorStore = async (
       metadataColumnName: 'metadata',
     },
   }
-  const embeddings = new OpenAIEmbeddings()
+  const embeddings = new OpenAIEmbeddings({
+    openAIApiKey: process.env.OPENAI_API_KEY,
+  })
   const pgvectorStore = new PGVectorStore(embeddings, originalConfig)
   return pgvectorStore
 }
