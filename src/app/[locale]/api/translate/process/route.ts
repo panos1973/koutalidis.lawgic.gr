@@ -219,8 +219,8 @@ export async function POST(req: NextRequest) {
     // Save to translations history table
     const srcLangName = LANG_NAMES[job.sourceLang as LangCode] ?? job.sourceLang
     const tgtLangName = LANG_NAMES[job.targetLang as LangCode] ?? job.targetLang
-    const title = job.isDocx
-      ? `${srcLangName} → ${tgtLangName}${job.docxFileName ? ` (${job.docxFileName})` : ''}`
+    const title = job.isDocx && job.docxFileName
+      ? `${job.docxFileName} (${srcLangName} → ${tgtLangName})`
       : `${srcLangName} → ${tgtLangName}`
 
     let translationId: string | null = null
