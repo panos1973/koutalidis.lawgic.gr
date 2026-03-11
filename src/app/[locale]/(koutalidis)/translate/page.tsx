@@ -23,6 +23,7 @@ import {
   saveTranslation,
   getTranslationHistory,
   getTranslationById,
+  getTranslationDownloadData,
   getActiveTranslationJob,
 } from '@/app/[locale]/actions/translation_actions'
 
@@ -399,6 +400,47 @@ export default function TranslatePage() {
     [],
   )
 
+  // Download a past translation (docx or txt)
+  const handleDownloadHistory = useCallback(async (id: string) => {
+    try {
+      const data = await getTranslationDownloadData(id)
+
+      if (data.translatedDocxBase64) {
+        // Download as DOCX
+        const byteChars = atob(data.translatedDocxBase64)
+        const byteArr = new Uint8Array(byteChars.length)
+        for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i)
+        const blob = new Blob([byteArr], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        const baseName = data.docxFileName
+          ? data.docxFileName.replace(/\.docx$/i, '')
+          : 'translation'
+        a.download = `${baseName}_${data.targetLang}.docx`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } else if (data.translatedText) {
+        // Download as TXT
+        const blob = new Blob([data.translatedText], { type: 'text/plain;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `translation_${data.sourceLang}_to_${data.targetLang}.txt`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }
+    } catch (err) {
+      console.error('Failed to download translation:', err)
+    }
+  }, [])
+
   // Push history data up to the layout-level ChatHistoryProvider
   const setChatHistory = useSetChatHistory()
 
@@ -420,8 +462,9 @@ export default function TranslatePage() {
         setLoadedFileName(null)
         setDocxState(null)
       },
+      onDownload: handleDownloadHistory,
     })
-  }, [historyItems, activeHistoryId, handleSelectHistory, setChatHistory])
+  }, [historyItems, activeHistoryId, handleSelectHistory, handleDownloadHistory, setChatHistory])
 
   // Clean up history context when unmounting
   useEffect(() => {

@@ -13,6 +13,7 @@ export interface ChatHistoryContextValue {
   activeConversationId?: string
   onSelectConversation?: (id: string) => void
   onNewConversation?: () => void
+  onDownload?: (id: string) => void
 }
 
 interface ChatHistoryStore {

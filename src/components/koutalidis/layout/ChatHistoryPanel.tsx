@@ -1,9 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import { useFocusMode } from './FocusModeProvider'
 import { useChatHistoryContext } from './ChatHistoryContext'
 import { cn } from '@/lib/utils'
-import { MessageSquare, Plus, X } from 'lucide-react'
+import { MessageSquare, Plus, X, Download, Loader2 } from 'lucide-react'
 
 interface Conversation {
   id: string
@@ -26,14 +27,27 @@ export function ChatHistoryPanel({
 }: ChatHistoryPanelProps) {
   const { chatHistoryVisible, setChatHistoryVisible } = useFocusMode()
   const ctx = useChatHistoryContext()
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   // Use props if provided, otherwise fall back to context
   const conversations = propConversations ?? ctx?.conversations ?? []
   const activeConversationId = propActiveId ?? ctx?.activeConversationId
   const onSelectConversation = propOnSelect ?? ctx?.onSelectConversation
   const onNewConversation = propOnNew ?? ctx?.onNewConversation
+  const onDownload = ctx?.onDownload
 
   if (!chatHistoryVisible) return null
+
+  const handleDownload = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    if (!onDownload || downloadingId) return
+    setDownloadingId(id)
+    try {
+      await onDownload(id)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   return (
     <div
@@ -75,14 +89,14 @@ export function ChatHistoryPanel({
           <ul className="py-1">
             {conversations.map((conv) => (
               <li key={conv.id}>
-                <button
-                  onClick={() => onSelectConversation?.(conv.id)}
+                <div
                   className={cn(
-                    'w-full text-left px-3 py-2 text-sm transition-colors',
+                    'w-full text-left px-3 py-2 text-sm transition-colors cursor-pointer',
                     activeConversationId === conv.id
                       ? 'bg-red-50 text-[#c5032a] border-r-2 border-[#c5032a]'
                       : 'text-gray-600 hover:bg-gray-50'
                   )}
+                  onClick={() => onSelectConversation?.(conv.id)}
                 >
                   <p className="truncate text-xs font-medium">
                     {conv.title || 'Untitled'}
@@ -90,7 +104,27 @@ export function ChatHistoryPanel({
                   <p className="text-[10px] text-gray-400 mt-0.5">
                     {new Date(conv.updatedAt).toLocaleDateString()}
                   </p>
-                </button>
+                  {onDownload && (
+                    <button
+                      onClick={(e) => handleDownload(e, conv.id)}
+                      disabled={downloadingId === conv.id}
+                      className={cn(
+                        'mt-1.5 flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded',
+                        'transition-colors',
+                        downloadingId === conv.id
+                          ? 'text-gray-400 bg-gray-50 cursor-wait'
+                          : 'text-[#c5032a] bg-red-50 hover:bg-red-100'
+                      )}
+                    >
+                      {downloadingId === conv.id ? (
+                        <Loader2 size={10} className="animate-spin" />
+                      ) : (
+                        <Download size={10} />
+                      )}
+                      {downloadingId === conv.id ? 'Downloading...' : 'Download translation'}
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
