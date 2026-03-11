@@ -2,11 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/subscription-management",
+      "path": "/en/api/cron/subscription-management",
       "schedule": "0 0 * * *"
     },
     {
-      "path": "/api/cron/translate-processor",
+      "path": "/en/api/cron/translate-processor",
       "schedule": "* * * * *"
     }
   ]
