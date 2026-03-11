@@ -23,82 +23,15 @@ import {
   saveTranslation,
   getTranslationHistory,
   getTranslationById,
+  getActiveTranslationJob,
 } from '@/app/[locale]/actions/translation_actions'
 
 // Lazy-load the DOCX preview to avoid SSR issues with docx-preview
 const DocxPreview = lazy(() => import('@/components/translate/DocxPreview'))
 
-/**
- * Compute adaptive batch ranges based on paragraph count AND character count.
- * Keeps each batch small enough to translate within the Vercel timeout.
- */
-function computeBatchRanges(
-  paragraphs: string[],
-  maxParagraphs = 15,
-  maxChars = 6000,
-): Array<[number, number]> {
-  const ranges: Array<[number, number]> = []
-  let start = 0
-  while (start < paragraphs.length) {
-    let end = start
-    let charCount = 0
-    while (end < paragraphs.length) {
-      const nextChars = charCount + paragraphs[end].length
-      if (end > start && (end - start >= maxParagraphs || nextChars > maxChars)) {
-        break
-      }
-      charCount = nextChars
-      end++
-    }
-    ranges.push([start, end])
-    start = end
-  }
-  return ranges
-}
-
-/** Fetch a single batch with up to 2 retries on 5xx / network errors */
-async function fetchBatchWithRetry(
-  url: string,
-  body: object,
-  batchIdx: number,
-): Promise<string[]> {
-  const MAX_RETRIES = 2
-  const RETRY_DELAYS = [3000, 6000] // 3s, 6s
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      if (res.ok) {
-        const { translations }: { translations: string[] } = await res.json()
-        return translations
-      }
-
-      // Retry on 5xx (gateway timeout, server error), not on 4xx
-      if (res.status >= 500 && attempt < MAX_RETRIES) {
-        console.warn(`[Translation] Batch ${batchIdx + 1} failed (${res.status}), retry ${attempt + 1}/${MAX_RETRIES}...`)
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]))
-        continue
-      }
-
-      const errData = await res.json().catch(() => null)
-      throw new Error(errData?.error || `Batch ${batchIdx + 1} failed (${res.status})`)
-    } catch (err) {
-      if (attempt < MAX_RETRIES && !(err instanceof Error && !err.message.includes('failed ('))) {
-        console.warn(`[Translation] Batch ${batchIdx + 1} network error, retry ${attempt + 1}/${MAX_RETRIES}...`)
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]))
-        continue
-      }
-      throw err
-    }
-  }
-
-  throw new Error(`Batch ${batchIdx + 1} failed after ${MAX_RETRIES + 1} attempts`)
-}
+// ─── Constants ──────────────────────────────────────────────────────
+const POLL_INTERVAL_MS = 3000
+const STORAGE_KEY = 'activeTranslationJobId'
 
 // ─── Supported languages ────────────────────────────────────────────
 interface Language {
@@ -264,6 +197,10 @@ export default function TranslatePage() {
   // DOCX document mode
   const [docxState, setDocxState] = useState<DocxState | null>(null)
 
+  // Active job tracking
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // Translation history
   const [historyItems, setHistoryItems] = useState<
     Array<{ id: string; title: string; sourceLang: string; targetLang: string; domain: string | null; paragraphCount: number | null; createdAt: Date | null }>
@@ -276,7 +213,149 @@ export default function TranslatePage() {
 
   const isDocxMode = docxState !== null
 
-  // Fetch translation history on mount
+  // ─── Polling logic ──────────────────────────────────────────────────
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+  }, [])
+
+  const startPolling = useCallback(
+    (jobId: string) => {
+      stopPolling()
+
+      pollingRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(
+            `/${locale}/api/translate/job-status/${jobId}`,
+          )
+          if (!res.ok) return
+
+          const data = await res.json()
+
+          if (data.status === 'preparing') {
+            setProgress({
+              phase: 'preparing',
+              message: t.analyzingDomain,
+              currentBatch: 0,
+              totalBatches: data.totalBatches || 0,
+            })
+          } else if (data.status === 'translating') {
+            setProgress({
+              phase: 'translating',
+              message: `${t.translatingSection} ${data.completedBatches} ${t.of} ${data.totalBatches}...`,
+              currentBatch: data.completedBatches,
+              totalBatches: data.totalBatches,
+            })
+          } else if (data.status === 'building') {
+            setProgress({
+              phase: 'building',
+              message: t.buildingDocx,
+              currentBatch: data.totalBatches,
+              totalBatches: data.totalBatches,
+            })
+          } else if (data.status === 'completed') {
+            stopPolling()
+            localStorage.removeItem(STORAGE_KEY)
+            setActiveJobId(null)
+            setIsTranslating(false)
+            setProgress(null)
+
+            // Set result
+            setResult({
+              translatedText: data.translatedText || '',
+              paragraphCount: data.paragraphCount || 0,
+              domain: data.domain || { primaryDomain: 'legal', secondaryDomain: null },
+            })
+
+            // Set language pair from job
+            if (data.sourceLang) setSourceLang(data.sourceLang as LangCode)
+            if (data.targetLang) setTargetLang(data.targetLang as LangCode)
+
+            // If DOCX, set the translated DOCX state
+            if (data.isDocx && data.translatedDocxBase64) {
+              setDocxState((prev) =>
+                prev
+                  ? { ...prev, translatedDocxBase64: data.translatedDocxBase64 }
+                  : null,
+              )
+            }
+
+            // Refresh history
+            fetchHistory()
+            if (data.translationId) {
+              setActiveHistoryId(data.translationId)
+            }
+          } else if (data.status === 'failed') {
+            stopPolling()
+            localStorage.removeItem(STORAGE_KEY)
+            setActiveJobId(null)
+            setIsTranslating(false)
+            setProgress(null)
+            setError(data.errorMessage || t.errorTranslating)
+          }
+        } catch {
+          // Network error — keep polling
+        }
+      }, POLL_INTERVAL_MS)
+    },
+    [locale, t, stopPolling],
+  )
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => stopPolling()
+  }, [stopPolling])
+
+  // ─── Resume on mount ────────────────────────────────────────────────
+
+  useEffect(() => {
+    async function checkForActiveJob() {
+      // First check localStorage
+      const savedJobId = localStorage.getItem(STORAGE_KEY)
+      if (savedJobId) {
+        setActiveJobId(savedJobId)
+        setIsTranslating(true)
+        setProgress({
+          phase: 'translating',
+          message: t.translating,
+          currentBatch: 0,
+          totalBatches: 0,
+        })
+        startPolling(savedJobId)
+        return
+      }
+
+      // Also check DB for active jobs (in case localStorage was cleared)
+      try {
+        const activeJob = await getActiveTranslationJob()
+        if (activeJob) {
+          localStorage.setItem(STORAGE_KEY, activeJob.id)
+          setActiveJobId(activeJob.id)
+          setIsTranslating(true)
+          if (activeJob.sourceLang) setSourceLang(activeJob.sourceLang as LangCode)
+          if (activeJob.targetLang) setTargetLang(activeJob.targetLang as LangCode)
+          setProgress({
+            phase: 'translating',
+            message: t.translating,
+            currentBatch: 0,
+            totalBatches: 0,
+          })
+          startPolling(activeJob.id)
+        }
+      } catch {
+        // Not critical — user can start a new translation
+      }
+    }
+
+    checkForActiveJob()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ─── History ────────────────────────────────────────────────────────
+
   const fetchHistory = useCallback(async () => {
     try {
       const items = await getTranslationHistory()
@@ -321,7 +400,6 @@ export default function TranslatePage() {
   )
 
   // Push history data up to the layout-level ChatHistoryProvider
-  // so the sidebar ChatHistoryPanel can display it
   const setChatHistory = useSetChatHistory()
 
   useEffect(() => {
@@ -350,7 +428,8 @@ export default function TranslatePage() {
     return () => setChatHistory(null)
   }, [setChatHistory])
 
-  // Auto-detect language when text changes (debounced)
+  // ─── Auto-detect language ───────────────────────────────────────────
+
   useEffect(() => {
     if (sourceText.length < 50) {
       setDetectedLang(null)
@@ -389,6 +468,8 @@ export default function TranslatePage() {
     }
   }, [docxState])
 
+  // ─── Language controls ──────────────────────────────────────────────
+
   const swapLanguages = () => {
     setSourceLang(targetLang)
     setTargetLang(sourceLang)
@@ -407,7 +488,8 @@ export default function TranslatePage() {
     setResult(null)
   }
 
-  // Handle a DOCX file — use the docx-extract API to get paragraphs + base64
+  // ─── File handling ──────────────────────────────────────────────────
+
   const handleDocxFile = useCallback(async (file: File) => {
     setIsExtractingFile(true)
     setError(null)
@@ -444,7 +526,6 @@ export default function TranslatePage() {
     }
   }, [locale, t])
 
-  // Extract text from a non-DOCX file — uses server API
   const extractTextFromFile = useCallback(async (file: File) => {
     const name = file.name.toLowerCase()
     const supportedExts = ['.txt', '.md', '.html', '.htm', '.csv', '.pdf', '.docx', '.doc', '.rtf', '.odt', '.xls', '.xlsx', '.ppt', '.pptx', '.eml', '.msg']
@@ -454,7 +535,6 @@ export default function TranslatePage() {
       return
     }
 
-    // DOCX files go through the document mode
     if (isDocxFile(name)) {
       await handleDocxFile(file)
       return
@@ -494,7 +574,6 @@ export default function TranslatePage() {
     }
   }, [locale, t, handleDocxFile])
 
-  // Handle file input change
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -528,140 +607,15 @@ export default function TranslatePage() {
     }
   }, [extractTextFromFile])
 
-  // ─── DOCX Translation handler ─────────────────────────────────────
-  const handleDocxTranslate = useCallback(async () => {
-    if (!docxState) return
+  // ─── Translation handler (job-based) ────────────────────────────────
 
-    setIsTranslating(true)
-    setResult(null)
-    setProgress(null)
-    setError(null)
-
-    try {
-      const { paragraphs, docxBase64 } = docxState
-
-      // Phase 1: Detect domain from paragraph text
-      setProgress({
-        phase: 'preparing',
-        message: t.analyzingDomain,
-        currentBatch: 0,
-        totalBatches: 0,
-      })
-
-      const fullText = paragraphs.join('\n\n')
-      const prepareRes = await fetch(`/${locale}/api/translate/prepare`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: fullText,
-          sourceLang,
-          targetLang,
-        }),
-      })
-
-      if (!prepareRes.ok) {
-        const errData = await prepareRes.json().catch(() => null)
-        throw new Error(errData?.error || `Preparation failed (${prepareRes.status})`)
-      }
-
-      const prepareData = await prepareRes.json()
-      const { domain, terminology } = prepareData
-
-      // Phase 2: Translate paragraphs in batches (using the DOCX-extracted paragraphs)
-      // Compute batch ranges client-side from actual DOCX paragraphs to maintain 1:1 mapping
-      const batchRanges = computeBatchRanges(paragraphs)
-      const totalBatches = batchRanges.length
-      const allTranslations: string[] = []
-
-      for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-        const [rangeStart, rangeEnd] = batchRanges[batchIdx]
-        const batchTexts = paragraphs.slice(rangeStart, rangeEnd)
-
-        setProgress({
-          phase: 'translating',
-          message: `${t.translatingSection} ${batchIdx + 1} ${t.of} ${totalBatches}...`,
-          currentBatch: batchIdx + 1,
-          totalBatches,
-        })
-
-        const translations = await fetchBatchWithRetry(
-          `/${locale}/api/translate/batch`,
-          { texts: batchTexts, sourceLang, targetLang, domain, terminology },
-          batchIdx,
-        )
-        allTranslations.push(...translations)
-      }
-
-      // Phase 3: Build translated DOCX
-      setProgress({
-        phase: 'building',
-        message: t.buildingDocx,
-        currentBatch: totalBatches,
-        totalBatches,
-      })
-
-      const paragraphMap = paragraphs.map((original, i) => ({
-        original,
-        translated: allTranslations[i] || original,
-      }))
-
-      const docxRes = await fetch(`/${locale}/api/translate/docx-translate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          docxBase64,
-          paragraphMap,
-        }),
-      })
-
-      if (!docxRes.ok) {
-        const errData = await docxRes.json().catch(() => null)
-        throw new Error(errData?.error || 'Failed to build translated document')
-      }
-
-      const docxResult = await docxRes.json()
-
-      // Update state with translated DOCX
-      setDocxState((prev) =>
-        prev ? { ...prev, translatedDocxBase64: docxResult.docxBase64 } : prev,
-      )
-
-      const translatedText = allTranslations
-        .filter((t) => t.trim().length > 0)
-        .join('\n\n')
-
-      setResult({
-        translatedText,
-        paragraphCount: paragraphs.length,
-        domain,
-      })
-
-      // Save to history
-      const title = `${getLang(sourceLang).name} → ${getLang(targetLang).name}${docxState.fileName ? ` (${docxState.fileName})` : ''}`
-      saveTranslation({
-        title,
-        sourceLang,
-        targetLang,
-        domain: [domain.primaryDomain, domain.secondaryDomain].filter(Boolean).join(', '),
-        paragraphCount: paragraphs.length,
-        sourcePreview: paragraphs.slice(0, 3).join(' ').slice(0, 200),
-        translatedPreview: allTranslations.slice(0, 3).join(' ').slice(0, 200),
-      }).then((id) => {
-        setActiveHistoryId(id)
-        fetchHistory()
-      }).catch((err) => console.error('Failed to save translation:', err))
-    } catch (err) {
-      console.error('DOCX translation error:', err)
-      setError(err instanceof Error ? err.message : t.errorTranslating)
-    } finally {
-      setIsTranslating(false)
-      setProgress(null)
+  const handleTranslate = useCallback(async () => {
+    // Validate input
+    if (!isDocxMode && !sourceText.trim()) {
+      setError(t.noContent)
+      return
     }
-  }, [docxState, sourceLang, targetLang, locale, t])
-
-  // ─── Plain text translation handler ────────────────────────────────
-  const handleTextTranslate = useCallback(async () => {
-    if (!sourceText.trim()) {
+    if (isDocxMode && (!docxState || docxState.paragraphs.length === 0)) {
       setError(t.noContent)
       return
     }
@@ -671,114 +625,58 @@ export default function TranslatePage() {
     setProgress(null)
     setError(null)
 
+    setProgress({
+      phase: 'preparing',
+      message: t.analyzingDomain,
+      currentBatch: 0,
+      totalBatches: 0,
+    })
+
     try {
-      setProgress({
-        phase: 'preparing',
-        message: t.analyzingDomain,
-        currentBatch: 0,
-        totalBatches: 0,
-      })
-
-      const prepareRes = await fetch(`/${locale}/api/translate/prepare`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: sourceText,
-          sourceLang,
-          targetLang,
-        }),
-      })
-
-      if (!prepareRes.ok) {
-        const errData = await prepareRes.json().catch(() => null)
-        throw new Error(errData?.error || `Preparation failed (${prepareRes.status})`)
-      }
-
-      const prepareData = await prepareRes.json()
-      const {
-        paragraphs,
-        domain,
-        terminology,
-        totalBatches,
-        batchRanges,
-      }: {
-        paragraphs: string[]
-        domain: { primaryDomain: string; secondaryDomain: string | null }
-        terminology: Array<{
-          sourceTerm: string
-          targetTerm: string
-          alternatives: Array<{ term: string; status: string }>
-          domains: string[]
-          reliability?: string
-        }>
-        totalBatches: number
-        batchRanges: Array<[number, number]>
-      } = prepareData
-
-      const allTranslations: string[] = []
-
-      for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-        const [rangeStart, rangeEnd] = batchRanges[batchIdx]
-        const batchTexts = paragraphs.slice(rangeStart, rangeEnd)
-
-        setProgress({
-          phase: 'translating',
-          message: `${t.translatingSection} ${batchIdx + 1} ${t.of} ${totalBatches}...`,
-          currentBatch: batchIdx + 1,
-          totalBatches,
-        })
-
-        const translations = await fetchBatchWithRetry(
-          `/${locale}/api/translate/batch`,
-          { texts: batchTexts, sourceLang, targetLang, domain, terminology },
-          batchIdx,
-        )
-        allTranslations.push(...translations)
-      }
-
-      const translatedText = allTranslations
-        .filter((t) => t.trim().length > 0)
-        .join('\n\n')
-
-      setResult({
-        translatedText,
-        paragraphCount: paragraphs.length,
-        domain,
-      })
-
-      // Save to history (include full text for text-mode translations)
-      const title = `${getLang(sourceLang).name} → ${getLang(targetLang).name}`
-      saveTranslation({
-        title,
+      // Build request body
+      const body: Record<string, unknown> = {
         sourceLang,
         targetLang,
-        domain: [domain.primaryDomain, domain.secondaryDomain].filter(Boolean).join(', '),
-        paragraphCount: paragraphs.length,
-        sourcePreview: sourceText.slice(0, 200),
-        translatedPreview: translatedText.slice(0, 200),
-        sourceText,
-        translatedText,
-      }).then((id) => {
-        setActiveHistoryId(id)
-        fetchHistory()
-      }).catch((err) => console.error('Failed to save translation:', err))
+      }
+
+      if (isDocxMode && docxState) {
+        body.isDocx = true
+        body.docxBase64 = docxState.docxBase64
+        body.docxFileName = docxState.fileName
+        body.paragraphs = docxState.paragraphs
+      } else {
+        body.sourceText = sourceText
+      }
+
+      // Call /api/translate/start to create job
+      const res = await fetch(`/${locale}/api/translate/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || `Failed to start translation (${res.status})`)
+      }
+
+      const { jobId } = await res.json()
+
+      // Save jobId for cross-page tracking
+      setActiveJobId(jobId)
+      localStorage.setItem(STORAGE_KEY, jobId)
+
+      // Start polling for progress
+      startPolling(jobId)
     } catch (err) {
-      console.error('Translation error:', err)
+      console.error('Translation start error:', err)
       setError(err instanceof Error ? err.message : t.errorTranslating)
-    } finally {
       setIsTranslating(false)
       setProgress(null)
     }
-  }, [sourceText, sourceLang, targetLang, locale, t])
+  }, [isDocxMode, docxState, sourceText, sourceLang, targetLang, locale, t, startPolling])
 
-  // Dispatch to correct handler
-  const handleTranslate = useCallback(() => {
-    if (isDocxMode) {
-      handleDocxTranslate()
-    } else {
-      handleTextTranslate()
-    }
-  }, [isDocxMode, handleDocxTranslate, handleTextTranslate])
+  // ─── Action handlers ────────────────────────────────────────────────
 
   const handleCopy = async () => {
     if (!result?.translatedText) return

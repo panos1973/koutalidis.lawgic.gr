@@ -1309,6 +1309,66 @@ export const toolFilesRelations = relations(toolFiles, ({ one }) => ({
   }),
 }))
 
+// ─── TRANSLATION JOBS (background processing) ──────────────────────
+export const translationJobStatusEnum = pgEnum('translation_job_status', [
+  'pending',
+  'preparing',
+  'translating',
+  'building',
+  'completed',
+  'failed',
+])
+
+export const translationJobs = pgTable('translation_jobs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: text('user_id').notNull(),
+  status: translationJobStatusEnum('status').notNull().default('pending'),
+
+  // Input
+  sourceText: text('source_text'),
+  sourceLang: text('source_lang').notNull(),
+  targetLang: text('target_lang').notNull(),
+
+  // DOCX mode
+  isDocx: boolean('is_docx').notNull().default(false),
+  docxBase64: text('docx_base64'),
+  docxFileName: text('docx_file_name'),
+
+  // Prepare phase results
+  paragraphs: jsonb('paragraphs').$type<string[]>(),
+  domain: jsonb('domain').$type<{ primaryDomain: string; secondaryDomain: string | null; confidence?: string }>(),
+  terminology: jsonb('terminology'),
+  batchRanges: jsonb('batch_ranges').$type<Array<[number, number]>>(),
+  totalBatches: integer('total_batches'),
+
+  // Translation progress
+  completedBatches: integer('completed_batches').notNull().default(0),
+  translatedParagraphs: jsonb('translated_paragraphs').$type<string[]>(),
+
+  // Result
+  translatedText: text('translated_text'),
+  translatedDocxBase64: text('translated_docx_base64'),
+  translationId: uuid('translation_id'),
+
+  // Error handling
+  errorMessage: text('error_message'),
+  retryCount: integer('retry_count').notNull().default(0),
+
+  // Timing
+  lastActivityAt: timestamp('last_activity_at', {
+    precision: 6,
+    withTimezone: true,
+  }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', {
+    precision: 6,
+    withTimezone: true,
+  }).defaultNow().notNull(),
+  completedAt: timestamp('completed_at', {
+    precision: 6,
+    withTimezone: true,
+  }),
+})
+
 // ─── TABULAR REVIEW ─────────────────────────────────────────────────
 export {
   tabular_reviews,
