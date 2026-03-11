@@ -13,6 +13,7 @@ import { getLLMModel } from '@/lib/models/llmModelFactory'
 import { TOOL_2_PROMPTS } from '@/lib/prompts/tool_2'
 import { elasticsearchRetrieverHybridSearch } from '@/lib/retrievers/elasticsearch_retriever'
 import { weaviateCourtSearch } from '@/lib/retrievers/weaviate_court_retriever'
+import { weaviateLawSearch } from '@/lib/retrievers/weaviate_law_retriever'
 import { decodeEscapedString } from '@/lib/decoding'
 import { VoyageAIClient, VoyageAI } from 'voyageai'
 import { AISDKExporter } from 'langsmith/vercel'
@@ -352,15 +353,27 @@ export async function POST(req: Request) {
               // Collect all retrieved data for potential reranking
               let combinedRetrievedData: string[] = []
 
-              // Retrieve Greek Laws if enabled
+              // Retrieve Greek Laws — Weaviate GreekLegalDocuments first, ES fallback
               if (includeGreekLaws) {
                 console.log('Retrieving Greek Laws...')
-                const lawResults = await retrieveAndFilterData(
-                  userQuery,
-                  '0825_greek_laws_collection',
-                  MAX_LAW_CHARACTERS_V2,
-                  'voyage-3.5-lite'
-                )
+                let lawResults: string[] = []
+                try {
+                  const weaviateLawResults = await weaviateLawSearch(userQuery, { limit: 20 })
+                  if (weaviateLawResults.length > 0) {
+                    lawResults = weaviateLawResults.map(r => r.fullReference).slice(0, Math.ceil(MAX_LAW_CHARACTERS_V2 / 3000))
+                    console.log(`Greek Laws from Weaviate: ${lawResults.length}`)
+                  }
+                } catch (e) {
+                  console.warn('⚠️ Weaviate law search failed, using Elasticsearch fallback')
+                }
+                if (lawResults.length === 0) {
+                  lawResults = await retrieveAndFilterData(
+                    userQuery,
+                    '0825_greek_laws_collection',
+                    MAX_LAW_CHARACTERS_V2,
+                    'voyage-3.5-lite'
+                  )
+                }
                 console.log(`Retrieved ${lawResults.length} law documents`)
                 combinedRetrievedData = [...lawResults]
               }
