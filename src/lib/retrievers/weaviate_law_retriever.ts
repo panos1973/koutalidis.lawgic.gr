@@ -113,6 +113,7 @@ const LAW_FIELDS = `
   publication_date
   file_url
   source_url
+  pdf_page_url
   chunk_index
   total_chunks
   _additional { score distance id }
@@ -241,6 +242,7 @@ ${escapeXml(chunkText)}
     arrayToXml('affected_entities', source.affected_entities),
     arrayToXml('content_flags', source.content_flags),
     createXmlTag('chunk_summary', source.chunk_summary),
+    createXmlTag('pdf_page_url', source.pdf_page_url),
     createXmlTag('file_url', source.file_url),
     createXmlTag('source_url', source.source_url),
     createXmlTag('chunk_index', source.chunk_index),
