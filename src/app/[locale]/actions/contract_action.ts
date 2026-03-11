@@ -502,15 +502,25 @@ const ContractSectionSchema = z.object({
 
 export type ContractSection = z.infer<typeof ContractSectionSchema>
 
+let _vectorPool: InstanceType<typeof pg.Pool> | null = null
+function getVectorPool() {
+  if (!_vectorPool) {
+    _vectorPool = new pg.Pool({
+      host: process.env.VECTOR_DB_HOST || 'c-publisize-postgress.rcf5qaewuyzyua.postgres.cosmos.azure.com',
+      port: Number(process.env.VECTOR_DB_PORT) || 5432,
+      user: process.env.VECTOR_DB_USER || 'citus',
+      password: process.env.VECTOR_DB_PASSWORD!,
+      database: process.env.VECTOR_DB_NAME || 'citus',
+      ssl: true,
+      max: 5,
+      idleTimeoutMillis: 30000,
+    })
+  }
+  return _vectorPool
+}
+
 export const createContractVectorStore = async (contractId: string) => {
-  const reusablePool = new pg.Pool({
-    host: 'c-publisize-postgress.rcf5qaewuyzyua.postgres.cosmos.azure.com',
-    port: 5432,
-    user: 'citus',
-    password: 'Db_pass123',
-    database: 'citus',
-    ssl: true,
-  })
+  const reusablePool = getVectorPool()
 
   const originalConfig = {
     pool: reusablePool,

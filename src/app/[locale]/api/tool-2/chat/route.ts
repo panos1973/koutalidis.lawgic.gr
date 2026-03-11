@@ -13,6 +13,7 @@ import { AISDKExporter } from 'langsmith/vercel'
 // import { searchVaultFiles } from '@/app/[locale]/actions/vault_actions'
 import { createPostgressVectorStore } from '@/app/[locale]/actions/tool_2_actions'
 import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
+import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
 
 export const maxDuration = 180
 // const maxOutputTokenSize = 4000
@@ -89,6 +90,12 @@ export async function POST(req: Request) {
     userEmail,
     fileChunkIds,
   } = await req.json()
+
+  // Rate limit: 10 requests/minute per user
+  const rateLimitKey = userEmail || 'anonymous'
+  const blocked = checkRateLimitOrRespond(chatRateLimit, rateLimitKey)
+  if (blocked) return blocked
+
   const data = new StreamData()
 
   // Get the user's actual query from the last message

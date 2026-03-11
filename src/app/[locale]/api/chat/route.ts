@@ -1,3 +1,4 @@
+import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
 import { AISDKExporter } from 'langsmith/vercel'
 import { VoyageAIClient, VoyageAI } from 'voyageai'
 import { processResultsWithSelectiveUrls } from '@/lib/utils'
@@ -99,7 +100,7 @@ const SAFE_FEATURES = {
 
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY
 const YOUCOM_API_KEY =
-  process.env.YOUCOM_API_KEY || process.env.You_com_api || 'ydc-sk-cf3700ca197e0cf0-Q7nZD16yX5mlViAPXNK5V0sA3MfKwgkx-a28af613'
+  process.env.YOUCOM_API_KEY || process.env.You_com_api || ''
 const USE_YOUCOM = true
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY
 const USE_DEEPSEEK = process.env.ENABLE_DEEPSEEK === 'true'
@@ -809,6 +810,11 @@ export async function POST(req: Request) {
     subscriptionId,
     searchInternet,
   } = await req.json()
+
+  // Rate limit: 10 requests/minute per user
+  const rateLimitKey = subscriptionId || userEmail || chatId || 'anonymous'
+  const blocked = checkRateLimitOrRespond(chatRateLimit, rateLimitKey)
+  if (blocked) return blocked
 
   try {
     await db

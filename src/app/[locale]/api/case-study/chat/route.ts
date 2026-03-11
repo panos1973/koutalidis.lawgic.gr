@@ -1,3 +1,4 @@
+import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
 import { getCachedTemplate } from '@/lib/templateCache'
 import { OpenAIEmbeddings } from '@langchain/openai'
 import {
@@ -194,7 +195,12 @@ export async function POST(req: Request) {
     subscriptionId?: string
     selectedTemplate?: CaseResearchTemplateKey
   } = await req.json()
-  
+
+  // Rate limit: 10 requests/minute per user
+  const rateLimitKey = subscriptionId || userEmail || 'anonymous'
+  const blocked = checkRateLimitOrRespond(chatRateLimit, rateLimitKey)
+  if (blocked) return blocked
+
   const data = new StreamData()
 
   // Get the user's actual query from the last message
