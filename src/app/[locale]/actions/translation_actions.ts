@@ -1,9 +1,9 @@
 'use server'
 
 import db from '@/db/drizzle'
-import { translations } from '@/db/schema'
+import { translations, translationJobs } from '@/db/schema'
 import { auth } from '@clerk/nextjs/server'
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, and, sql } from 'drizzle-orm'
 
 export async function saveTranslation(data: {
   title: string
@@ -83,4 +83,34 @@ export async function deleteTranslation(id: string) {
   }
 
   await db.delete(translations).where(eq(translations.id, id))
+}
+
+/**
+ * Get the most recent active (non-completed, non-failed) translation job
+ * for the current user. Used to resume showing progress after navigation.
+ */
+export async function getActiveTranslationJob() {
+  const { userId } = auth()
+  if (!userId) return null
+
+  const [job] = await db
+    .select({
+      id: translationJobs.id,
+      status: translationJobs.status,
+      sourceLang: translationJobs.sourceLang,
+      targetLang: translationJobs.targetLang,
+      isDocx: translationJobs.isDocx,
+      docxFileName: translationJobs.docxFileName,
+    })
+    .from(translationJobs)
+    .where(
+      and(
+        eq(translationJobs.userId, userId),
+        sql`${translationJobs.status} IN ('pending', 'preparing', 'translating', 'building')`,
+      ),
+    )
+    .orderBy(desc(translationJobs.createdAt))
+    .limit(1)
+
+  return job ?? null
 }

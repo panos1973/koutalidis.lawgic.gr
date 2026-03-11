@@ -4,6 +4,7 @@ import { KoutalidisSidebar } from '@/components/koutalidis/layout/KoutalidisSide
 import { ChatHistoryPanel } from '@/components/koutalidis/layout/ChatHistoryPanel'
 import { ChatHistoryProvider } from '@/components/koutalidis/layout/ChatHistoryContext'
 import { BreadcrumbBar } from '@/components/koutalidis/layout/BreadcrumbBar'
+import { TranslationNotifier } from '@/components/translate/TranslationNotifier'
 
 export default function KoutalidisLayout({
   children,
@@ -25,6 +26,7 @@ export default function KoutalidisLayout({
           </ChatHistoryProvider>
         </div>
       </div>
+      <TranslationNotifier />
     </FocusModeProvider>
   )
 }
