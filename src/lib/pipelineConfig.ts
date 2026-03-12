@@ -292,10 +292,16 @@ export function getPipelinePromptSuffix(
  * With older versions, these options are safely ignored.
  */
 export function getAnthropicProviderOptions(config: PipelineConfig) {
-  // TODO: Re-enable thinking/effort options after upgrading @ai-sdk/anthropic to 3.x+
-  // The 'adaptive' thinking type and 'effort' parameter require a newer SDK version.
-  // Current version ^1.2.12 does not support these options and the API rejects them,
-  // causing the chat stream to error with "An error occurred".
+  // Match the working config from lawgic_corp reference repo:
+  // thinking type must be 'enabled' (not 'adaptive'), with a budgetTokens value.
+  // The 'effort' parameter is not supported by @ai-sdk/anthropic ^1.2.x.
+  if (config.enableAdaptiveThinking) {
+    return {
+      anthropic: {
+        thinking: { type: 'enabled' as const, budgetTokens: 8000 },
+      },
+    }
+  }
   return {}
 }
 
@@ -304,8 +310,11 @@ export function getAnthropicProviderOptions(config: PipelineConfig) {
  * Use this for tool routes that don't have the query classifier.
  */
 export function getDefaultProviderOptions(effort: EffortLevel = 'medium') {
-  // TODO: Re-enable after upgrading @ai-sdk/anthropic to 3.x+
-  return {}
+  return {
+    anthropic: {
+      thinking: { type: 'enabled' as const, budgetTokens: 8000 },
+    },
+  }
 }
 
 /**
