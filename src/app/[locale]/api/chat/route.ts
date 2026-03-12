@@ -1111,20 +1111,17 @@ export async function POST(req: Request) {
       return retrieveAndFilterData(query, 'greek_laws_collection', maxChars, 'voyage-3.5')
     }
 
-    // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback
+    // Helper: retrieve court decisions from Weaviate only (no Elasticsearch fallback)
     const retrieveCourtDecisions = async (maxChars: number) => {
       try {
         console.log('📚 Attempting Weaviate court retrieval...')
         const weaviateResults = await retrieveCourtDecisionsFromWeaviate(userQuery, maxChars)
-        if (weaviateResults.aiVersions.length > 0) {
-          console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
-          return weaviateResults
-        }
-        console.log('⚠️ Weaviate returned no results, falling back to Elasticsearch')
+        console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
+        return weaviateResults
       } catch (error) {
-        console.warn('⚠️ Weaviate court retrieval failed, falling back to Elasticsearch:', error)
+        console.warn('⚠️ Weaviate court retrieval failed:', error)
+        return { aiVersions: [], fullReferences: [], referenceTypes: [] }
       }
-      return retrieveAndFilterData(userQuery, 'dev_greek_court', maxChars, undefined)
     }
 
     // Helper: retrieve graph context for temporal/amendment queries
@@ -1524,6 +1521,7 @@ export async function POST(req: Request) {
       model: selectedModel,
       system: pipelineEnhancedSystemMessage,
       maxTokens: maxOutputTokenSize,
+      maxSteps: 2, // Step 1: Claude calls answerLawQuestions tool, Step 2: Claude generates response from tool results
       experimental_telemetry: telemetrySettings,
       tools: {
         answerLawQuestions: tool({
@@ -1619,20 +1617,17 @@ export async function POST(req: Request) {
               return retrieveAndFilterData(query, 'greek_laws_collection', maxChars, 'voyage-3.5')
             }
 
-            // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback (tool path)
+            // Helper: retrieve court decisions from Weaviate only (no Elasticsearch fallback)
             const retrieveCourtDecisionsTool = async (maxChars: number) => {
               try {
                 console.log('📚 Attempting Weaviate court retrieval (tool)...')
                 const weaviateResults = await retrieveCourtDecisionsFromWeaviate(userQuery, maxChars)
-                if (weaviateResults.aiVersions.length > 0) {
-                  console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
-                  return weaviateResults
-                }
-                console.log('⚠️ Weaviate returned no results, falling back to Elasticsearch')
+                console.log(`✅ Weaviate court retrieval (tool): ${weaviateResults.aiVersions.length} results`)
+                return weaviateResults
               } catch (error) {
-                console.warn('⚠️ Weaviate court retrieval failed, falling back to Elasticsearch:', error)
+                console.warn('⚠️ Weaviate court retrieval failed:', error)
+                return { aiVersions: [], fullReferences: [], referenceTypes: [] }
               }
-              return retrieveAndFilterData(userQuery, 'dev_greek_court', maxChars, undefined)
             }
 
             if (
@@ -2000,15 +1995,12 @@ export async function POST(req: Request) {
                   preferences.includeGreekCourtDecisions &&
                   discoveredGaps.newKeywords.length > 0
                 ) {
-                  // Try Weaviate first, fallback to Elasticsearch
+                  // Weaviate only for court decisions
                   let secondCaseSearch
                   try {
                     secondCaseSearch = await retrieveCourtDecisionsFromWeaviate(discoveredQuery, adjustedBudgets.maxCaseChars / 2)
-                    if (secondCaseSearch.aiVersions.length === 0) {
-                      secondCaseSearch = await retrieveAndFilterData(discoveredQuery, 'dev_greek_court', adjustedBudgets.maxCaseChars / 2, undefined)
-                    }
                   } catch {
-                    secondCaseSearch = await retrieveAndFilterData(discoveredQuery, 'dev_greek_court', adjustedBudgets.maxCaseChars / 2, undefined)
+                    secondCaseSearch = { aiVersions: [], fullReferences: [], referenceTypes: [] }
                   }
 
                   secondSearchResults = {
