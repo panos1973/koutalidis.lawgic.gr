@@ -292,12 +292,11 @@ export function getPipelinePromptSuffix(
  * With older versions, these options are safely ignored.
  */
 export function getAnthropicProviderOptions(config: PipelineConfig) {
-  return {
-    anthropic: {
-      ...(config.enableAdaptiveThinking && { thinking: { type: 'adaptive' as const } }),
-      effort: config.effort,
-    },
-  }
+  // TODO: Re-enable thinking/effort options after upgrading @ai-sdk/anthropic to 3.x+
+  // The 'adaptive' thinking type and 'effort' parameter require a newer SDK version.
+  // Current version ^1.2.12 does not support these options and the API rejects them,
+  // causing the chat stream to error with "An error occurred".
+  return {}
 }
 
 /**
@@ -305,12 +304,8 @@ export function getAnthropicProviderOptions(config: PipelineConfig) {
  * Use this for tool routes that don't have the query classifier.
  */
 export function getDefaultProviderOptions(effort: EffortLevel = 'medium') {
-  return {
-    anthropic: {
-      thinking: { type: 'adaptive' },
-      effort,
-    },
-  }
+  // TODO: Re-enable after upgrading @ai-sdk/anthropic to 3.x+
+  return {}
 }
 
 /**
