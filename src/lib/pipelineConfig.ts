@@ -295,14 +295,11 @@ export function getAnthropicProviderOptions(config: PipelineConfig) {
   // Match the working config from lawgic_corp reference repo:
   // thinking type must be 'enabled' (not 'adaptive'), with a budgetTokens value.
   // The 'effort' parameter is not supported by @ai-sdk/anthropic ^1.2.x.
-  if (config.enableAdaptiveThinking) {
-    return {
-      anthropic: {
-        thinking: { type: 'enabled' as const, budgetTokens: 8000 },
-      },
-    }
+  return {
+    anthropic: {
+      thinking: { type: 'enabled' as const, budgetTokens: 8000 },
+    },
   }
-  return {}
 }
 
 /**
