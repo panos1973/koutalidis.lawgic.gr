@@ -2,8 +2,6 @@
 // Cluster: dxyeak9tnm4gp8raeh1g (europe-west3, GCP)
 // All vectors: voyage-context-3 (1024 dimensions)
 
-import { VoyageAIClient } from 'voyageai'
-
 // ─── Environment Configuration ──────────────────────────────────────────────
 
 export const WEAVIATE_CONFIG = {
@@ -32,34 +30,61 @@ export const COLLECTIONS = {
 } as const
 
 // ─── Embedding Helper ───────────────────────────────────────────────────────
+// voyage-context-3 uses the contextualized embeddings endpoint, NOT /v1/embeddings
+// Input format: inputs: [[query]] (nested array)
+// See: lawgic_corp/src/lib/retrievers/weaviate_law_retriever.tsx
 
-let voyageClient: VoyageAIClient | null = null
-
-function getVoyageClient(): VoyageAIClient | null {
+export async function getQueryEmbedding(query: string): Promise<number[] | null> {
   if (!WEAVIATE_CONFIG.voyageApiKey) {
     console.error('❌ VOYAGE_API_KEY not set for Weaviate retrievers')
     return null
   }
-  if (!voyageClient) {
-    voyageClient = new VoyageAIClient({ apiKey: WEAVIATE_CONFIG.voyageApiKey })
-  }
-  return voyageClient
-}
-
-export async function getQueryEmbedding(query: string): Promise<number[] | null> {
-  const client = getVoyageClient()
-  if (!client) return null
 
   try {
-    const response = await client.embed({
-      model: WEAVIATE_CONFIG.voyageModel,
-      input: query,
-      inputType: 'query',
+    const response = await fetch('https://api.voyageai.com/v1/contextualizedembeddings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${WEAVIATE_CONFIG.voyageApiKey}`,
+      },
+      body: JSON.stringify({
+        inputs: [[query]],
+        model: WEAVIATE_CONFIG.voyageModel,
+        input_type: 'query',
+        output_dimension: WEAVIATE_CONFIG.dimensions,
+      }),
     })
 
-    const embedding = response?.data?.[0]?.embedding
-    if (!embedding || embedding.length === 0) {
-      throw new Error('Empty embedding returned from voyage-context-3')
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Voyage API error: ${response.status} - ${errorText}`)
+    }
+
+    const data = await response.json()
+
+    // Handle multiple response formats (SDK vs HTTP API)
+    let embedding: number[] | undefined
+
+    // Format 1: { results: [{ embeddings: [[...]] }] }
+    if (data.results && Array.isArray(data.results) && data.results.length > 0) {
+      embedding = data.results[0]?.embeddings?.[0]
+    }
+
+    // Format 2: { data: [{ data: [{ embedding: [...] }] }] }
+    if (!embedding && data.data && Array.isArray(data.data) && data.data.length > 0) {
+      const outerData = data.data[0]
+      if (outerData?.data && Array.isArray(outerData.data) && outerData.data.length > 0) {
+        embedding = outerData.data[0]?.embedding
+      }
+      // Standard format { data: [{ embedding: [...] }] }
+      if (!embedding && outerData?.embedding && Array.isArray(outerData.embedding)) {
+        embedding = outerData.embedding
+      }
+    }
+
+    if (!embedding || !Array.isArray(embedding) || embedding.length === 0) {
+      console.error('❌ Failed to extract embedding. Response:', JSON.stringify(data).substring(0, 500))
+      throw new Error('Failed to extract embedding from Voyage API response')
     }
 
     return embedding
