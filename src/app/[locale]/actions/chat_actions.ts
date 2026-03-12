@@ -724,7 +724,8 @@ export async function storePendingReferences(
     return uniqueRefs
   } catch (error: any) {
     console.error('Error in storePendingReferences:', error)
-    throw error
+    // Return empty array instead of re-throwing to avoid crashing the chat stream
+    return []
   }
 }
 

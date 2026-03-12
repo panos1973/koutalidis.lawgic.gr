@@ -1417,11 +1417,15 @@ export async function POST(req: Request) {
         false
       )
 
-      await storePendingReferences(
-        chatId,
-        combined_references.slice(0, finalSearchResults.length),
-        combined_reference_types.slice(0, finalSearchResults.length)
-      )
+      try {
+        await storePendingReferences(
+          chatId,
+          combined_references.slice(0, finalSearchResults.length),
+          combined_reference_types.slice(0, finalSearchResults.length)
+        )
+      } catch (refError) {
+        console.error('❌ Failed to store pending references (local LLM path):', refError)
+      }
     }
 
     console.log(
@@ -1542,6 +1546,7 @@ export async function POST(req: Request) {
               ),
           }),
           execute: async ({ query }) => {
+           try {
             let combined_ai_versions: string[] = []
             let combined_references: string[] = []
             let combined_reference_types: string[] = []
@@ -2382,11 +2387,15 @@ export async function POST(req: Request) {
                   false
                 )
 
-                await storePendingReferences(
-                  chatId,
-                  combined_references.slice(0, trimmedFallback.length),
-                  combined_reference_types.slice(0, trimmedFallback.length)
-                )
+                try {
+                  await storePendingReferences(
+                    chatId,
+                    combined_references.slice(0, trimmedFallback.length),
+                    combined_reference_types.slice(0, trimmedFallback.length)
+                  )
+                } catch (refError) {
+                  console.error('❌ Failed to store pending references (rerank fallback path):', refError)
+                }
 
                 const processedResults = processResultsWithSelectiveUrls(
                   trimmedFallback,
@@ -2412,11 +2421,15 @@ export async function POST(req: Request) {
                 false
               )
 
-              await storePendingReferences(
-                chatId,
-                combined_references.slice(0, trimmedDocuments.length),
-                combined_reference_types.slice(0, trimmedDocuments.length)
-              )
+              try {
+                await storePendingReferences(
+                  chatId,
+                  combined_references.slice(0, trimmedDocuments.length),
+                  combined_reference_types.slice(0, trimmedDocuments.length)
+                )
+              } catch (refError) {
+                console.error('❌ Failed to store pending references (non-reranked path):', refError)
+              }
 
               if (trimmedDocuments.length === 0) {
                 return locale === 'el'
@@ -2505,6 +2518,13 @@ export async function POST(req: Request) {
 
               return processedResults
             }
+           } catch (toolError) {
+            console.error('❌ Critical error in answerLawQuestions tool execution:', toolError)
+            // Return a user-friendly message instead of crashing the stream
+            return locale === 'el'
+              ? ['Παρουσιάστηκε σφάλμα κατά την αναζήτηση στη νομική βάση δεδομένων. Παρακαλώ δοκιμάστε ξανά.']
+              : ['An error occurred while searching the legal database. Please try again.']
+           }
           },
         }),
       },
