@@ -1521,6 +1521,8 @@ export async function POST(req: Request) {
       `[Pipeline] Anthropic options: effort=${pipelineConfig.effort}, adaptiveThinking=${pipelineConfig.enableAdaptiveThinking}`
     )
 
+    console.log('🧠 Starting streamText call...')
+
     result = streamText({
       model: selectedModel,
       system: pipelineEnhancedSystemMessage,
@@ -2564,9 +2566,11 @@ export async function POST(req: Request) {
     })
   }
 
+  console.log('✅ Returning streamText response to client')
   return result.toDataStreamResponse()
   } catch (error) {
     console.error('❌ Unhandled error in chat POST:', error)
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack')
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : 'An unexpected error occurred',
