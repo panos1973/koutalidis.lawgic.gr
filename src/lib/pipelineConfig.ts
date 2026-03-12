@@ -292,12 +292,17 @@ export function getPipelinePromptSuffix(
  * With older versions, these options are safely ignored.
  */
 export function getAnthropicProviderOptions(config: PipelineConfig) {
-  return {
-    anthropic: {
-      ...(config.enableAdaptiveThinking && { thinking: { type: 'adaptive' as const } }),
-      effort: config.effort,
-    },
+  // Match the working config from lawgic_corp reference repo:
+  // thinking type must be 'enabled' (not 'adaptive'), with a budgetTokens value.
+  // The 'effort' parameter is not supported by @ai-sdk/anthropic ^1.2.x.
+  if (config.enableAdaptiveThinking) {
+    return {
+      anthropic: {
+        thinking: { type: 'enabled' as const, budgetTokens: 8000 },
+      },
+    }
   }
+  return {}
 }
 
 /**
@@ -307,8 +312,7 @@ export function getAnthropicProviderOptions(config: PipelineConfig) {
 export function getDefaultProviderOptions(effort: EffortLevel = 'medium') {
   return {
     anthropic: {
-      thinking: { type: 'adaptive' },
-      effort,
+      thinking: { type: 'enabled' as const, budgetTokens: 8000 },
     },
   }
 }
