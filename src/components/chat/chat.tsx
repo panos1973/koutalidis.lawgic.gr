@@ -581,7 +581,7 @@ const Chat: NextPage<Props> = ({
 
   useEffect(() => {
     if (error) {
-      console.log(error)
+      console.error('Chat error details:', error.message, error)
       toast.error(tToast('general.somethingWentWrong'))
     }
   }, [error, messages])

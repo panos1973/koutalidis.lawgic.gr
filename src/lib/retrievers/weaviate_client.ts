@@ -76,14 +76,24 @@ export async function executeWeaviateQuery(graphqlQuery: string): Promise<any> {
     ? WEAVIATE_CONFIG.url
     : `https://${WEAVIATE_CONFIG.url}`
 
-  const response = await fetch(`${endpoint}/v1/graphql`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${WEAVIATE_CONFIG.apiKey}`,
-    },
-    body: JSON.stringify({ query: graphqlQuery }),
-  })
+  // 15-second timeout to prevent hanging if Weaviate is unreachable
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+  let response: Response
+  try {
+    response = await fetch(`${endpoint}/v1/graphql`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${WEAVIATE_CONFIG.apiKey}`,
+      },
+      body: JSON.stringify({ query: graphqlQuery }),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeoutId)
+  }
 
   if (!response.ok) {
     const errorText = await response.text()
