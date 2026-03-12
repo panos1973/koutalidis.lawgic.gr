@@ -66,7 +66,6 @@ import {
   getPipelineConfig,
   getPipelinePromptSuffix,
   getAdjustedBudgets,
-  getAnthropicProviderOptions,
   type PipelineConfig,
 } from '@/lib/pipelineConfig'
 
@@ -1519,12 +1518,6 @@ export async function POST(req: Request) {
       runName: 'athena_api_v1',
     })
 
-    // Build Sonnet 4.6 thinking & effort options based on pipeline classification
-    const anthropicOptions = getAnthropicProviderOptions(pipelineConfig)
-    console.log(
-      `[Pipeline] Anthropic options: effort=${pipelineConfig.effort}, adaptiveThinking=${pipelineConfig.enableAdaptiveThinking}`
-    )
-
     console.log('🧠 Starting streamText call...')
 
     result = streamText({
@@ -1532,8 +1525,6 @@ export async function POST(req: Request) {
       system: pipelineEnhancedSystemMessage,
       maxTokens: maxOutputTokenSize,
       experimental_telemetry: telemetrySettings,
-      experimental_continueSteps: true,
-      providerOptions: anthropicOptions,
       tools: {
         answerLawQuestions: tool({
           description:
