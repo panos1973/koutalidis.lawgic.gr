@@ -2,7 +2,7 @@ import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
 import { AISDKExporter } from 'langsmith/vercel'
 import { VoyageAIClient, VoyageAI } from 'voyageai'
 import { processResultsWithSelectiveUrls } from '@/lib/utils'
-import { streamText, tool, convertToCoreMessages } from 'ai'
+import { streamText, convertToCoreMessages } from 'ai'
 import {
   deduplicateAllSources,
   convertToExpectedFormat,
@@ -32,7 +32,7 @@ import {
   claudeAnalyzeQuery,
   localLlmAnalyzeQuery,
 } from '@/lib/chatApiUtils'
-import { z } from 'zod'
+// z (zod) no longer needed — tools removed
 import { recordMessageUsage } from '../../actions/subscription'
 import { revalidatePath } from 'next/cache'
 import {
@@ -1111,20 +1111,17 @@ export async function POST(req: Request) {
       return retrieveAndFilterData(query, 'greek_laws_collection', maxChars, 'voyage-3.5')
     }
 
-    // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback
+    // Helper: retrieve court decisions from Weaviate only (no Elasticsearch fallback)
     const retrieveCourtDecisions = async (maxChars: number) => {
       try {
         console.log('📚 Attempting Weaviate court retrieval...')
         const weaviateResults = await retrieveCourtDecisionsFromWeaviate(userQuery, maxChars)
-        if (weaviateResults.aiVersions.length > 0) {
-          console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
-          return weaviateResults
-        }
-        console.log('⚠️ Weaviate returned no results, falling back to Elasticsearch')
+        console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
+        return weaviateResults
       } catch (error) {
-        console.warn('⚠️ Weaviate court retrieval failed, falling back to Elasticsearch:', error)
+        console.warn('⚠️ Weaviate court retrieval failed:', error)
+        return { aiVersions: [], fullReferences: [], referenceTypes: [] }
       }
-      return retrieveAndFilterData(userQuery, 'dev_greek_court', maxChars, undefined)
     }
 
     // Helper: retrieve graph context for temporal/amendment queries
@@ -1510,7 +1507,7 @@ export async function POST(req: Request) {
       },
     })
   } else {
-    console.log('🧠 Using CLAUDE')
+    console.log('🧠 Using CLAUDE — PRE-SEARCH then synthesis (no tools)')
 
     const selectedModel = await getLLMModel('claude-sonnet-4-6')
     const telemetrySettings = AISDKExporter.getSettings({
@@ -1518,1012 +1515,425 @@ export async function POST(req: Request) {
       runName: 'athena_api_v1',
     })
 
-    console.log('🧠 Starting streamText call...')
+    // === PRE-SEARCH: Run all searches BEFORE calling Claude ===
+    // This eliminates tool-call complexity and matches the lawgic_corp architecture.
 
-    result = streamText({
+    let combined_ai_versions: string[] = []
+    let combined_references: string[] = []
+    let combined_reference_types: string[] = []
+
+    const queryIntent = await analyzeQueryIntent(userQuery)
+
+    let enhancedAnalysis = null
+    try {
+      console.log(
+        '🧠 Starting Claude analysis for query:',
+        userQuery.substring(0, 100) + '...'
+      )
+      enhancedAnalysis = await claudeAnalyzeQuery(userQuery)
+      console.log('✅ Claude analysis completed:', {
+        categories: enhancedAnalysis.legalCategories,
+        keywords: enhancedAnalysis.keywords,
+        laws: enhancedAnalysis.detectedLaws,
+        temporal: enhancedAnalysis.temporalIntent,
+        confidence: enhancedAnalysis.confidence,
+      })
+    } catch (error) {
+      console.log(
+        '❌ Claude analysis failed, using basic analysis:',
+        error instanceof Error ? error.message : String(error)
+      )
+      enhancedAnalysis = null
+    }
+
+    const combinedQueryIntent = {
+      ...queryIntent,
+      legalCategories: enhancedAnalysis?.legalCategories || ['γενικό'],
+      keywords: [...(enhancedAnalysis?.keywords || []), 'ισχύον', 'τρέχων'],
+      enhancedLaws: enhancedAnalysis?.detectedLaws || [],
+      enhancedTemporal: enhancedAnalysis?.temporalIntent || true,
+      analysisConfidence: enhancedAnalysis?.confidence || 'low',
+    }
+
+    console.log(
+      `🚀 [${pipelineConfig.pipelineLabel}] Starting searches - ES:${
+        preferences.includeGreekLaws || preferences.includeGreekCourtDecisions
+      } PX:${!!PERPLEXITY_API_KEY} DS:${USE_DEEPSEEK} YC:${USE_YOUCOM}`
+    )
+    const parallelStartTime = Date.now()
+
+    let law_data: any = null
+    let pastcase_data: any = null
+    let deepSeekResult: StructuredPerplexityResults | null = null
+    let perplexityResult: StructuredPerplexityResults | null = null
+    let youComResult: StructuredPerplexityResults | null = null
+
+    const allSearchPromises: Promise<void>[] = []
+
+    // Helper: retrieve laws from Weaviate with Elasticsearch fallback
+    const retrieveLaws = async (query: string, maxChars: number) => {
+      try {
+        console.log('📚 Attempting Weaviate law retrieval (GreekLegalDocuments)...')
+        const weaviateResults = await retrieveLawsFromWeaviate(query, maxChars)
+        if (weaviateResults.aiVersions.length > 0) {
+          console.log(`✅ Weaviate law retrieval: ${weaviateResults.aiVersions.length} results`)
+          return weaviateResults
+        }
+        console.log('⚠️ Weaviate law search returned no results, falling back to Elasticsearch')
+      } catch (error) {
+        console.warn('⚠️ Weaviate law retrieval failed, falling back to Elasticsearch:', error)
+      }
+      return retrieveAndFilterData(query, 'greek_laws_collection', maxChars, 'voyage-3.5')
+    }
+
+    // Helper: retrieve court decisions from Weaviate only (no Elasticsearch fallback)
+    const retrieveCourtDecisions = async (maxChars: number) => {
+      try {
+        console.log('📚 Attempting Weaviate court retrieval...')
+        const weaviateResults = await retrieveCourtDecisionsFromWeaviate(userQuery, maxChars)
+        console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
+        return weaviateResults
+      } catch (error) {
+        console.warn('⚠️ Weaviate court retrieval failed:', error)
+        return { aiVersions: [], fullReferences: [], referenceTypes: [] }
+      }
+    }
+
+    // Helper: retrieve graph context for temporal/amendment queries
+    const retrieveGraphContextIfNeeded = async (): Promise<string> => {
+      if (
+        queryClassification.queryType !== 'temporal' ||
+        queryClassification.detectedLaws.length === 0
+      ) {
+        return ''
+      }
+      try {
+        console.log(`📊 Building graph context for temporal query (laws: ${queryClassification.detectedLaws.join(', ')})`)
+        const graphParts: string[] = []
+        for (const lawRef of queryClassification.detectedLaws.slice(0, 3)) {
+          const lawNumber = lawRef.match(/(\d+\/\d{4})/)?.[1]
+          if (!lawNumber) continue
+          const graphContext = await retrieveGraphContext(lawNumber, undefined, 30000)
+          if (graphContext.aiVersions.length > 0) {
+            graphParts.push(...graphContext.aiVersions)
+          }
+        }
+        if (graphParts.length > 0) {
+          console.log(`✅ Graph context built: ${graphParts.length} law graph(s)`)
+          return '\n\n' + graphParts.join('\n\n')
+        }
+      } catch (error) {
+        console.warn('⚠️ Graph context retrieval failed:', error)
+      }
+      return ''
+    }
+
+    if (
+      preferences.includeGreekLaws &&
+      preferences.includeGreekCourtDecisions
+    ) {
+      allSearchPromises.push(
+        (async () => {
+          try {
+            const balancedMaxLawChars = adjustedBudgets.maxLawChars
+            const balancedMaxCaseChars = Math.floor(adjustedBudgets.maxCaseChars / 2)
+
+            const [lawResults, caseResults] = await Promise.all([
+              retrieveLaws(userQuery, balancedMaxLawChars),
+              retrieveCourtDecisions(balancedMaxCaseChars),
+            ])
+
+            law_data = lawResults
+            pastcase_data = caseResults
+            console.log('✅ [Weaviate+ES] Data retrieval completed')
+          } catch (error) {
+            console.error('❌ Data retrieval failed:', error)
+          }
+        })()
+      )
+    } else if (preferences.includeGreekLaws) {
+      allSearchPromises.push(
+        (async () => {
+          try {
+            law_data = await retrieveLaws(userQuery, adjustedBudgets.maxLawChars)
+            console.log('✅ Weaviate/ES law search completed')
+          } catch (error) {
+            console.error('❌ [ES] Law search failed:', error)
+          }
+        })()
+      )
+    } else if (preferences.includeGreekCourtDecisions) {
+      allSearchPromises.push(
+        (async () => {
+          try {
+            pastcase_data = await retrieveCourtDecisions(adjustedBudgets.maxCaseChars)
+            console.log('✅ Court decisions retrieval completed')
+          } catch (error) {
+            console.error('❌ Case search failed:', error)
+          }
+        })()
+      )
+    }
+
+    if (USE_DEEPSEEK && DEEPSEEK_API_KEY) {
+      allSearchPromises.push(
+        (async () => {
+          try {
+            if (deepSeekCircuitBreaker.isOpen()) {
+              console.log(`⚡ [DS] Circuit breaker OPEN, skipping...`)
+              return
+            }
+
+            const result = await Promise.race([
+              searchDeepSeekForLegal(userQuery),
+              new Promise<null>((_, reject) =>
+                setTimeout(() => reject(new Error('DeepSeek timeout')), 30000)
+              ),
+            ])
+
+            if (result && typeof result === 'object' && 'success' in result) {
+              deepSeekResult = result as StructuredPerplexityResults
+              console.log(`✅ [DS] DeepSeek completed`)
+            }
+          } catch (error) {
+            console.error('❌ [DS] DeepSeek failed:', error)
+          }
+        })()
+      )
+    }
+
+    if (PERPLEXITY_API_KEY) {
+      allSearchPromises.push(
+        (async () => {
+          try {
+            const result = await Promise.race([
+              searchInternetForLegal(userQuery),
+              new Promise<null>((_, reject) =>
+                setTimeout(() => reject(new Error('Perplexity timeout')), 60000)
+              ),
+            ])
+
+            if (result && typeof result === 'object' && 'success' in result) {
+              perplexityResult = result as StructuredPerplexityResults
+              console.log(`✅ [PX] Perplexity completed`)
+            }
+          } catch (error) {
+            console.error('❌ [PX] Perplexity failed:', error)
+          }
+        })()
+      )
+    }
+
+    if (USE_YOUCOM && YOUCOM_API_KEY) {
+      allSearchPromises.push(
+        (async () => {
+          try {
+            const result = await Promise.race([
+              searchYouComForLegal(userQuery),
+              new Promise<null>((_, reject) =>
+                setTimeout(() => reject(new Error('You.com timeout')), 35000)
+              ),
+            ])
+
+            if (result && typeof result === 'object' && 'success' in result) {
+              youComResult = result as StructuredPerplexityResults
+              console.log(`✅ [YC] You.com completed`)
+            }
+          } catch (error) {
+            console.error('❌ [YC] You.com failed:', error)
+          }
+        })()
+      )
+    }
+
+    // Add graph context retrieval for temporal queries (runs in parallel with other searches)
+    let graphContextResult = ''
+    allSearchPromises.push(
+      (async () => {
+        try {
+          graphContextResult = await retrieveGraphContextIfNeeded()
+        } catch (error) {
+          console.warn('⚠️ Graph context retrieval failed:', error)
+        }
+      })()
+    )
+
+    await Promise.allSettled(allSearchPromises)
+    console.log(
+      `⏱️ All searches completed in ${Date.now() - parallelStartTime}ms`
+    )
+
+    const combinedResults = combineAllSources(
+      { law_data, pastcase_data },
+      deepSeekResult,
+      perplexityResult,
+      youComResult
+    )
+
+    combined_ai_versions = combinedResults.aiVersions
+    combined_references = combinedResults.fullReferences
+    combined_reference_types = combinedResults.referenceTypes
+
+    // Inject graph context (amendment chains, version history) into results
+    if (graphContextResult) {
+      console.log(`📊 Injecting graph context (${graphContextResult.length} chars) into results`)
+      combined_ai_versions.unshift(graphContextResult)
+      combined_references.unshift(graphContextResult)
+      combined_reference_types.unshift('weaviate_graph')
+    }
+
+    if (fileChunkIds && fileChunkIds.length > 0) {
+      const result = await searchLibraryFiles(userQuery, fileChunkIds)
+      const finalResult =
+        locale === 'el'
+          ? `Αυτά είναι τα αποτελέσματα αναζήτησης από τα έγγραφα του χρήστη: ${result}`
+          : `These are the user library documents search results: ${result}`
+      combined_ai_versions.push(finalResult)
+    }
+
+    const reservedForOutput = maxOutputTokenSize + 2000
+    const maxTokensForDocs =
+      MAX_CONTEXT_TOKENS - totalCurrentTokens - reservedForOutput
+
+    console.log(
+      `🔥 Token budget for documents: ${maxTokensForDocs} (Context: ${totalCurrentTokens}, Output: ${reservedForOutput})`
+    )
+
+    // Apply reranking if enabled
+    let finalSearchResults = combined_ai_versions
+
+    if (useVoyage && combined_ai_versions.length > 0) {
+      try {
+        const voyageClient = new VoyageAIClient({
+          apiKey: process.env.VOYAGE_API_KEY!,
+        })
+
+        const dynamicTopK = Math.min(
+          RERANKED_K,
+          combined_ai_versions.length,
+          Math.floor(maxTokensForDocs / 3000)
+        )
+
+        const voyage_results: VoyageAI.RerankResponse =
+          await voyageClient.rerank({
+            model: 'rerank-2.5-lite',
+            query: userQuery,
+            documents: combined_ai_versions,
+            topK: dynamicTopK,
+          })
+
+        let ranked_results = voyage_results.data
+          ?.map((result) => {
+            if (
+              typeof result.index === 'number' &&
+              combined_ai_versions[result.index]
+            ) {
+              return combined_ai_versions[result.index]
+            }
+            return undefined
+          })
+          .filter((item): item is string => item !== undefined)
+
+        if (ranked_results) {
+          ranked_results = smartContextTrimming(
+            ranked_results,
+            Math.floor(maxTokensForDocs / 3.5),
+            false
+          )
+          const ranked_reference_types = ranked_results.map((aiVersion) => {
+            const index = combined_ai_versions.indexOf(aiVersion)
+            return index !== -1 ? combined_reference_types[index] : 'unknown'
+          })
+
+          finalSearchResults = processResultsWithSelectiveUrls(
+            ranked_results,
+            ranked_reference_types
+          )
+
+          const ranked_references = ranked_results
+            .map((aiVersion) => {
+              const index = combined_ai_versions.indexOf(aiVersion)
+              return index !== -1
+                ? {
+                    reference: combined_references[index],
+                    type: combined_reference_types[index],
+                  }
+                : null
+            })
+            .filter(
+              (ref): ref is { reference: string; type: string } => ref !== null
+            )
+
+          await storePendingReferences(
+            chatId,
+            ranked_references.map((r) => r.reference),
+            ranked_references.map((r) => r.type)
+          )
+
+          console.log(
+            `✅ VoyageAI reranking successful: ${finalSearchResults.length} results`
+          )
+        }
+      } catch (e) {
+        console.error('❌ Voyage rerank error:', e)
+        const maxDocsWithoutReranking = Math.floor(maxTokensForDocs / 4000)
+        finalSearchResults = smartContextTrimming(
+          combined_ai_versions.slice(0, maxDocsWithoutReranking * 2),
+          Math.floor(maxTokensForDocs / 3.5),
+          false
+        )
+      }
+    } else {
+      const maxDocsWithoutReranking = Math.floor(maxTokensForDocs / 4000)
+      finalSearchResults = smartContextTrimming(
+        combined_ai_versions.slice(0, maxDocsWithoutReranking * 2),
+        Math.floor(maxTokensForDocs / 3.5),
+        false
+      )
+
+      try {
+        await storePendingReferences(
+          chatId,
+          combined_references.slice(0, finalSearchResults.length),
+          combined_reference_types.slice(0, finalSearchResults.length)
+        )
+      } catch (refError) {
+        console.error('❌ Failed to store pending references (Claude path):', refError)
+      }
+    }
+
+    console.log(
+      `🧠 Claude receiving ${finalSearchResults.length} search results`
+    )
+
+    // Inject search results into messages for Claude (pre-search architecture)
+    const contextMessage =
+      finalSearchResults.length > 0
+        ? `\n\nRelevant legal documents and information:\n\n${finalSearchResults.join(
+            '\n\n---\n\n'
+          )}`
+        : ''
+
+    const enrichedMessages = convertToCoreMessages(
+      cachedVaultFiles.length > 0
+        ? [...cachedVaultFiles, ...systemMessages]
+        : systemMessages
+    )
+
+    // Add context to the last user message
+    if (enrichedMessages.length > 0) {
+      const lastMessage = enrichedMessages[enrichedMessages.length - 1]
+      if (lastMessage.role === 'user') {
+        lastMessage.content = lastMessage.content + contextMessage
+      }
+    }
+
+    result = await streamText({
       model: selectedModel,
       system: pipelineEnhancedSystemMessage,
+      messages: enrichedMessages,
       maxTokens: maxOutputTokenSize,
       experimental_telemetry: telemetrySettings,
-      tools: {
-        answerLawQuestions: tool({
-          description:
-            'Answers questions related to Laws, Past Cases, Legal Articles and Bibliography.',
-          parameters: z.object({
-            query: z
-              .string()
-              .describe(
-                'Exact user query as provided without modifications, paraphrasing, or any other alterations. Include the current date for temporal context: {{currentDate}}'
-              ),
-          }),
-          execute: async ({ query }) => {
-           try {
-            let combined_ai_versions: string[] = []
-            let combined_references: string[] = []
-            let combined_reference_types: string[] = []
-
-            const queryIntent = await analyzeQueryIntent(userQuery)
-
-            let enhancedAnalysis = null
-            try {
-              console.log(
-                '🧠 Starting Claude analysis for query:',
-                userQuery.substring(0, 100) + '...'
-              )
-              enhancedAnalysis = await claudeAnalyzeQuery(userQuery)
-              console.log('✅ Claude analysis completed:', {
-                categories: enhancedAnalysis.legalCategories,
-                keywords: enhancedAnalysis.keywords,
-                laws: enhancedAnalysis.detectedLaws,
-                temporal: enhancedAnalysis.temporalIntent,
-                confidence: enhancedAnalysis.confidence,
-              })
-            } catch (error) {
-              console.log(
-                '❌ Claude analysis failed, using basic analysis:',
-                error instanceof Error ? error.message : String(error)
-              )
-              enhancedAnalysis = null
-            }
-
-            const combinedQueryIntent = {
-              ...queryIntent,
-              legalCategories: enhancedAnalysis?.legalCategories || ['γενικό'],
-              keywords: [
-                ...(enhancedAnalysis?.keywords || []),
-                'ισχύον',
-                'τρέχων',
-              ],
-              enhancedLaws: [],
-              enhancedTemporal: true,
-              analysisConfidence: enhancedAnalysis?.confidence || 'low',
-            }
-
-            console.log('🎯 Combined query analysis:', {
-              basicRequiresCurrentLaw: queryIntent.requiresCurrentLaw,
-              enhancedTemporal: combinedQueryIntent.enhancedTemporal,
-              enhancedLaws: combinedQueryIntent.enhancedLaws,
-              keywords: combinedQueryIntent.keywords,
-              confidence: combinedQueryIntent.analysisConfidence,
-            })
-
-            console.log(
-              `🚀 Starting searches - ES:${
-                preferences.includeGreekLaws ||
-                preferences.includeGreekCourtDecisions
-              } PX:${!!PERPLEXITY_API_KEY} DS:${USE_DEEPSEEK} YC:${USE_YOUCOM}`
-            )
-            const parallelStartTime = Date.now()
-
-            let law_data: any = null
-            let pastcase_data: any = null
-            let deepSeekResult: StructuredPerplexityResults | null = null
-            let perplexityResult: StructuredPerplexityResults | null = null
-            let youComResult: StructuredPerplexityResults | null = null
-
-            const allSearchPromises: Promise<void>[] = []
-
-            // Helper: retrieve laws from Weaviate with Elasticsearch fallback (tool path)
-            const retrieveLawsTool = async (query: string, maxChars: number) => {
-              try {
-                console.log('📚 Attempting Weaviate law retrieval (tool)...')
-                const weaviateResults = await retrieveLawsFromWeaviate(query, maxChars)
-                if (weaviateResults.aiVersions.length > 0) {
-                  console.log(`✅ Weaviate law retrieval (tool): ${weaviateResults.aiVersions.length} results`)
-                  return weaviateResults
-                }
-                console.log('⚠️ Weaviate law search returned no results, falling back to Elasticsearch')
-              } catch (error) {
-                console.warn('⚠️ Weaviate law retrieval failed, falling back to Elasticsearch:', error)
-              }
-              return retrieveAndFilterData(query, 'greek_laws_collection', maxChars, 'voyage-3.5')
-            }
-
-            // Helper: retrieve court decisions from Weaviate with Elasticsearch fallback (tool path)
-            const retrieveCourtDecisionsTool = async (maxChars: number) => {
-              try {
-                console.log('📚 Attempting Weaviate court retrieval (tool)...')
-                const weaviateResults = await retrieveCourtDecisionsFromWeaviate(userQuery, maxChars)
-                if (weaviateResults.aiVersions.length > 0) {
-                  console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
-                  return weaviateResults
-                }
-                console.log('⚠️ Weaviate returned no results, falling back to Elasticsearch')
-              } catch (error) {
-                console.warn('⚠️ Weaviate court retrieval failed, falling back to Elasticsearch:', error)
-              }
-              return retrieveAndFilterData(userQuery, 'dev_greek_court', maxChars, undefined)
-            }
-
-            if (
-              preferences.includeGreekLaws &&
-              preferences.includeGreekCourtDecisions
-            ) {
-              allSearchPromises.push(
-                (async () => {
-                  try {
-                    const balancedMaxLawChars = adjustedBudgets.maxLawChars
-                    const balancedMaxCaseChars = Math.floor(
-                      adjustedBudgets.maxCaseChars / 2
-                    )
-
-                    const [lawResults, caseResults] = await Promise.all([
-                      retrieveLawsTool(userQuery, balancedMaxLawChars),
-                      retrieveCourtDecisionsTool(balancedMaxCaseChars),
-                    ])
-
-                    law_data = lawResults
-                    pastcase_data = caseResults
-                    console.log('✅ [Weaviate+ES] Data retrieval completed (tool)')
-                  } catch (error) {
-                    console.error('❌ Data retrieval failed (tool):', error)
-                  }
-                })()
-              )
-            } else if (preferences.includeGreekLaws) {
-              allSearchPromises.push(
-                (async () => {
-                  try {
-                    law_data = await retrieveLawsTool(userQuery, adjustedBudgets.maxLawChars)
-                    console.log('✅ Weaviate/ES law search completed (tool)')
-                  } catch (error) {
-                    console.error('❌ [ES] Law search failed:', error)
-                  }
-                })()
-              )
-            } else if (preferences.includeGreekCourtDecisions) {
-              allSearchPromises.push(
-                (async () => {
-                  try {
-                    pastcase_data = await retrieveCourtDecisionsTool(adjustedBudgets.maxCaseChars)
-                    console.log('✅ Court decisions retrieval completed')
-                  } catch (error) {
-                    console.error('❌ Case search failed:', error)
-                  }
-                })()
-              )
-            }
-
-            if (USE_DEEPSEEK && DEEPSEEK_API_KEY) {
-              allSearchPromises.push(
-                (async () => {
-                  try {
-                    if (deepSeekCircuitBreaker.isOpen()) {
-                      const status = deepSeekCircuitBreaker.getStatus()
-                      console.log(
-                        `⚡ [DS] Circuit breaker OPEN until ${new Date(
-                          status.openUntil
-                        ).toISOString()}, skipping...`
-                      )
-                      return
-                    }
-
-                    const searchPromise = searchDeepSeekForLegal(userQuery)
-
-                    const timeoutPromise =
-                      new Promise<StructuredPerplexityResults | null>(
-                        (_, reject) => {
-                          setTimeout(() => {
-                            reject(
-                              new Error('DeepSeek timeout after 30 seconds')
-                            )
-                          }, 30000)
-                        }
-                      )
-
-                    const result = await Promise.race([
-                      searchPromise,
-                      timeoutPromise,
-                    ])
-
-                    if (
-                      result &&
-                      typeof result === 'object' &&
-                      'success' in result
-                    ) {
-                      deepSeekResult = result as StructuredPerplexityResults
-                      const total =
-                        (deepSeekResult.legislation?.length || 0) +
-                        (deepSeekResult.jurisprudence?.length || 0) +
-                        (deepSeekResult.developments?.length || 0)
-                      console.log(
-                        `✅ [DS] DeepSeek completed with ${total} total results`
-                      )
-                    } else {
-                      console.warn(
-                        '⚠️ [DS] DeepSeek returned unexpected format'
-                      )
-                    }
-                  } catch (error) {
-                    console.error(
-                      '❌ [DS] DeepSeek failed:',
-                      error instanceof Error ? error.message : String(error)
-                    )
-
-                    if (
-                      error instanceof Error &&
-                      error.message.includes('timeout')
-                    ) {
-                      deepSeekCircuitBreaker.recordTimeout()
-                      console.warn(
-                        '📊 [DS] Timeout recorded to circuit breaker'
-                      )
-                    }
-                  }
-                })()
-              )
-            }
-
-            if (PERPLEXITY_API_KEY) {
-              allSearchPromises.push(
-                (async () => {
-                  try {
-                    const searchPromise = searchInternetForLegal(userQuery)
-                    const timeoutPromise =
-                      new Promise<StructuredPerplexityResults | null>(
-                        (_, reject) => {
-                          setTimeout(() => {
-                            reject(
-                              new Error('Perplexity timeout after 60 seconds')
-                            )
-                          }, 60000)
-                        }
-                      )
-
-                    const result = await Promise.race([
-                      searchPromise,
-                      timeoutPromise,
-                    ])
-
-                    if (
-                      result &&
-                      typeof result === 'object' &&
-                      'success' in result
-                    ) {
-                      perplexityResult = result as StructuredPerplexityResults
-                      const total =
-                        (perplexityResult.legislation?.length || 0) +
-                        (perplexityResult.jurisprudence?.length || 0) +
-                        (perplexityResult.developments?.length || 0)
-                      console.log(
-                        `✅ [PX] Perplexity completed with ${total} total results`
-                      )
-                    } else {
-                      console.warn(
-                        '⚠️ [PX] Perplexity returned unexpected format'
-                      )
-                    }
-                  } catch (error) {
-                    console.error(
-                      '❌ [PX] Perplexity failed:',
-                      error instanceof Error ? error.message : String(error)
-                    )
-                  }
-                })()
-              )
-            }
-
-            if (USE_YOUCOM && YOUCOM_API_KEY) {
-              allSearchPromises.push(
-                (async () => {
-                  try {
-                    const searchPromise = searchYouComForLegal(userQuery)
-
-                    const timeoutPromise =
-                      new Promise<StructuredPerplexityResults | null>(
-                        (_, reject) => {
-                          setTimeout(() => {
-                            reject(
-                              new Error('You.com timeout after 35 seconds')
-                            )
-                          }, 35000)
-                        }
-                      )
-
-                    const result = await Promise.race([
-                      searchPromise,
-                      timeoutPromise,
-                    ])
-
-                    if (
-                      result &&
-                      typeof result === 'object' &&
-                      'success' in result
-                    ) {
-                      youComResult = result as StructuredPerplexityResults
-                      const total =
-                        (youComResult.legislation?.length || 0) +
-                        (youComResult.jurisprudence?.length || 0) +
-                        (youComResult.developments?.length || 0)
-                      console.log(
-                        `✅ [YC] You.com completed with ${total} total results`
-                      )
-                    } else {
-                      console.warn('⚠️ [YC] You.com returned unexpected format')
-                    }
-                  } catch (error) {
-                    console.error(
-                      '❌ [YC] You.com failed:',
-                      error instanceof Error ? error.message : String(error)
-                    )
-                  }
-                })()
-              )
-            }
-
-            console.log(
-              `🚀 Executing ${allSearchPromises.length} searches in PARALLEL...`
-            )
-            await Promise.allSettled(allSearchPromises)
-            console.log(
-              `⏱️ All searches completed in ${Date.now() - parallelStartTime}ms`
-            )
-
-            console.log('=== SEARCH RESULTS SUMMARY ===')
-            console.log('Elasticsearch:', {
-              laws: (law_data as any)?.aiVersions?.length || 0,
-              cases: (pastcase_data as any)?.aiVersions?.length || 0,
-            })
-
-            const typedDeepSeek =
-              deepSeekResult as StructuredPerplexityResults | null
-            if (typedDeepSeek && typedDeepSeek.success) {
-              console.log('DeepSeek Results:', {
-                success: true,
-                legislation: typedDeepSeek.legislation?.length || 0,
-                jurisprudence: typedDeepSeek.jurisprudence?.length || 0,
-                developments: typedDeepSeek.developments?.length || 0,
-              })
-            } else {
-              console.log('DeepSeek Results:', { success: false })
-            }
-
-            const typedPerplexity =
-              perplexityResult as StructuredPerplexityResults | null
-            if (typedPerplexity && typedPerplexity.success) {
-              console.log('Perplexity Results:', {
-                success: true,
-                legislation: typedPerplexity.legislation?.length || 0,
-                jurisprudence: typedPerplexity.jurisprudence?.length || 0,
-                developments: typedPerplexity.developments?.length || 0,
-              })
-            } else {
-              console.log('Perplexity Results:', { success: false })
-            }
-
-            const typedYouCom =
-              youComResult as StructuredPerplexityResults | null
-            if (typedYouCom && typedYouCom.success) {
-              console.log('You.com General Web Results:', {
-                success: true,
-                webResults: typedYouCom.developments?.length || 0,
-              })
-            } else {
-              console.log('You.com Results:', { success: false })
-            }
-            console.log('=== END SEARCH RESULTS SUMMARY ===')
-
-            const combinedInternetResult = combineInternetResults(
-              deepSeekResult,
-              perplexityResult,
-              youComResult
-            )
-
-            const discoveredGaps = detectPerplexityGaps(
-              combinedInternetResult,
-              combinedQueryIntent.enhancedLaws,
-              combinedQueryIntent.keywords
-            )
-
-            if (discoveredGaps.hasNewContent) {
-              console.log(
-                '🔍 PHASE 4A: Discovered new content from Internet APIs:',
-                {
-                  newLaws: discoveredGaps.newLaws,
-                  newKeywords: discoveredGaps.newKeywords,
-                  totalNewItems:
-                    discoveredGaps.newLaws.length +
-                    discoveredGaps.newKeywords.length,
-                  sources: {
-                    fromDeepSeek: !!deepSeekResult,
-                    fromPerplexity: !!perplexityResult,
-                  },
-                }
-              )
-            } else {
-              console.log(
-                '✅ PHASE 4A: No significant gaps detected, proceeding with current results'
-              )
-            }
-
-            let secondSearchResults = null
-
-            // Pipeline config controls second-pass behavior:
-            // - forceSecondPassOnGaps: always do 2nd search if gaps found (temporal/multi_hop)
-            // - enableSecondPassSearch: allow 2nd search at all
-            const shouldDoSecondPass =
-              pipelineConfig.enableSecondPassSearch &&
-              ((discoveredGaps.hasNewContent &&
-                discoveredGaps.confidenceScore > 0.4) ||
-                (pipelineConfig.forceSecondPassOnGaps &&
-                  discoveredGaps.hasNewContent))
-
-            if (shouldDoSecondPass) {
-              console.log(
-                `🔄 [${pipelineConfig.pipelineLabel}] PHASE 4B: Starting second search with discovered content...`
-              )
-
-              try {
-                const discoveredQuery = [
-                  userQuery,
-                  ...discoveredGaps.newKeywords,
-                  ...discoveredGaps.newLaws,
-                ].join(' ')
-
-                console.log('Enhanced search query:', {
-                  originalQuery: userQuery,
-                  discoveredQuery: discoveredQuery,
-                  newLaws: discoveredGaps.newLaws,
-                  newKeywords: discoveredGaps.newKeywords,
-                  pipeline: pipelineConfig.pipelineLabel,
-                })
-
-                if (
-                  preferences.includeGreekLaws &&
-                  discoveredGaps.newLaws.length > 0
-                ) {
-                  // Try Weaviate first, fallback to Elasticsearch
-                  let secondLawSearch
-                  try {
-                    secondLawSearch = await retrieveLawsFromWeaviate(discoveredQuery, adjustedBudgets.maxLawChars / 2)
-                    if (secondLawSearch.aiVersions.length === 0) {
-                      secondLawSearch = await retrieveAndFilterData(discoveredQuery, 'greek_laws_collection', adjustedBudgets.maxLawChars / 2, 'voyage-3.5')
-                    }
-                  } catch {
-                    secondLawSearch = await retrieveAndFilterData(discoveredQuery, 'greek_laws_collection', adjustedBudgets.maxLawChars / 2, 'voyage-3.5')
-                  }
-
-                  secondSearchResults = {
-                    laws: secondLawSearch,
-                    searchType: 'laws_focused',
-                    discoveredContent: discoveredGaps,
-                  }
-
-                  console.log('✅ PHASE 4B: Second law search completed:', {
-                    resultsCount: secondLawSearch.aiVersions.length,
-                    totalChars: secondLawSearch.aiVersions.reduce(
-                      (sum: number, text: string) => sum + text.length,
-                      0
-                    ),
-                  })
-                } else if (
-                  preferences.includeGreekCourtDecisions &&
-                  discoveredGaps.newKeywords.length > 0
-                ) {
-                  // Try Weaviate first, fallback to Elasticsearch
-                  let secondCaseSearch
-                  try {
-                    secondCaseSearch = await retrieveCourtDecisionsFromWeaviate(discoveredQuery, adjustedBudgets.maxCaseChars / 2)
-                    if (secondCaseSearch.aiVersions.length === 0) {
-                      secondCaseSearch = await retrieveAndFilterData(discoveredQuery, 'dev_greek_court', adjustedBudgets.maxCaseChars / 2, undefined)
-                    }
-                  } catch {
-                    secondCaseSearch = await retrieveAndFilterData(discoveredQuery, 'dev_greek_court', adjustedBudgets.maxCaseChars / 2, undefined)
-                  }
-
-                  secondSearchResults = {
-                    cases: secondCaseSearch,
-                    searchType: 'cases_focused',
-                    discoveredContent: discoveredGaps,
-                  }
-
-                  console.log('✅ PHASE 4B: Second case search completed:', {
-                    resultsCount: secondCaseSearch.aiVersions.length,
-                    totalChars: secondCaseSearch.aiVersions.reduce(
-                      (sum: number, text: string) => sum + text.length,
-                      0
-                    ),
-                  })
-                }
-              } catch (secondSearchError) {
-                console.log(
-                  '❌ PHASE 4B: Second search failed, continuing with original results:',
-                  secondSearchError instanceof Error
-                    ? secondSearchError.message
-                    : String(secondSearchError)
-                )
-                secondSearchResults = null
-              }
-            } else {
-              console.log(
-                `⏭️ [${pipelineConfig.pipelineLabel}] PHASE 4B: Skipping second search (pipeline: enableSecondPass=${pipelineConfig.enableSecondPassSearch}, gaps=${discoveredGaps.hasNewContent})`
-              )
-            }
-
-            const combinedResults = combineAllSources(
-              { law_data, pastcase_data },
-              deepSeekResult,
-              perplexityResult,
-              youComResult
-            )
-
-            combined_ai_versions = combinedResults.aiVersions
-            combined_references = combinedResults.fullReferences
-            combined_reference_types = combinedResults.referenceTypes
-
-            const yearPattern = /\b(20\d{2})\b/g
-            const yearsFound = new Set<string>()
-            combined_ai_versions.forEach((result, index) => {
-              const matches = result.match(yearPattern)
-              if (matches) {
-                matches.forEach((year) => yearsFound.add(year))
-                if (parseInt(matches[0]) >= 2023) {
-                  console.log(
-                    `📌 Recent content at position ${index}: Years ${matches.join(
-                      ', '
-                    )}`
-                  )
-                }
-              }
-            })
-            console.log(
-              `📅 All years in results: ${Array.from(yearsFound)
-                .sort()
-                .join(', ')}`
-            )
-            console.log(
-              `🆕 Recent years (2023+): ${Array.from(yearsFound)
-                .filter((y: string) => parseInt(y) >= 2023)
-                .join(', ')}`
-            )
-
-            const gapCheck = detectMissingRecentLaws(combinedResults, userQuery)
-            if (gapCheck.warning) {
-              console.log('⚠️ Gap detected:', gapCheck.warning)
-              combined_ai_versions.unshift(gapCheck.warning)
-            }
-
-            console.log('=== PHASE 4B FINAL DATABASE SUMMARY ===')
-            console.log('Database Results After Iterative Search:', {
-              totalDatabaseResults: combined_ai_versions.length,
-              fromOriginalSearch:
-                ((law_data as any)?.aiVersions?.length || 0) +
-                ((pastcase_data as any)?.aiVersions?.length || 0),
-              fromSecondSearch: secondSearchResults
-                ? ((secondSearchResults as any).laws?.aiVersions?.length || 0) +
-                  ((secondSearchResults as any).cases?.aiVersions?.length || 0)
-                : 0,
-              hasIterativeResults: !!secondSearchResults,
-              iterativeSearchType:
-                (secondSearchResults as any)?.searchType || 'none',
-              gapDetectionWorked: discoveredGaps.hasNewContent,
-              confidenceScore: discoveredGaps.confidenceScore,
-            })
-
-            if (discoveredGaps.hasNewContent) {
-              console.log('📊 Discovered Content Impact:', {
-                originalClaudeAnalysis: {
-                  laws: combinedQueryIntent.enhancedLaws,
-                  keywords: combinedQueryIntent.keywords,
-                },
-                perplexityDiscovered: {
-                  newLaws: discoveredGaps.newLaws,
-                  newKeywords: discoveredGaps.newKeywords,
-                },
-                searchEnhancement: secondSearchResults
-                  ? 'SUCCESSFUL'
-                  : 'SKIPPED/FAILED',
-              })
-            }
-            console.log('=== END PHASE 4B DATABASE SUMMARY ===')
-
-            console.log('Total Combined:', combined_ai_versions.length)
-
-            const deepSeekCount = combined_ai_versions.filter((item) =>
-              item.includes('[DeepSeek]')
-            ).length
-            const perplexityCount = combined_ai_versions.filter((item) =>
-              item.includes('[Perplexity]')
-            ).length
-            const youComCount = combined_ai_versions.filter((item) =>
-              item.includes('[You.com]')
-            ).length
-            console.log('DeepSeek Markers Found:', deepSeekCount)
-            console.log('Perplexity Markers Found:', perplexityCount)
-            console.log('You.com Markers Found:', youComCount)
-
-            if (fileChunkIds && fileChunkIds.length > 0) {
-              const result = await searchLibraryFiles(userQuery, fileChunkIds)
-              const finalResult =
-                locale === 'el'
-                  ? `Αυτά είναι τα αποτελέσματα αναζήτησης από τα έγγραφα του χρήστη, χρησιμοποιήστε τα για να ενισχύσετε τις απαντήσεις σας. Αποτελέσματα Αναζήτησης: ${result}`
-                  : `These are the user library documents search results, use them to enhance the responses. Search Results: ${result}`
-              combined_ai_versions.push(finalResult)
-            }
-
-            const reservedForOutput = maxOutputTokenSize + 2000
-            const maxTokensForDocs =
-              MAX_CONTEXT_TOKENS - totalCurrentTokens - reservedForOutput
-
-            console.log(
-              `🔥 Token budget for documents: ${maxTokensForDocs} (Context: ${totalCurrentTokens}, Output: ${reservedForOutput})`
-            )
-
-            if (useVoyage && combined_ai_versions.length > 0) {
-              try {
-                let modifiedQuery = userQuery
-
-                if (queryIntent.requiresCurrentLaw || pipelineConfig.enableTemporalReranking) {
-                  const currentYear = new Date().getFullYear()
-                  const recentYearStart = currentYear - 1
-
-                  if (locale === 'el') {
-                    modifiedQuery = `${userQuery} [ΚΡΙΤΗΡΙΟ: Προτίμηση εγγράφων ${currentYear}, ${recentYearStart}. Προτεραιότητα: 1) Πρόσφατες τροποποιήσεις νόμων ${recentYearStart}-${currentYear}, 2) Ισχύουσες διατάξεις, 3) Νέες δικαστικές αποφάσεις. Υποβάθμιση παλαιότερων εκτός αν είναι θεμελιώδεις νόμοι σε ισχύ]`
-                  } else {
-                    modifiedQuery = `${userQuery} [CRITERIA: Prefer documents ${currentYear}, ${recentYearStart}. Priority: 1) Recent law amendments ${recentYearStart}-${currentYear}, 2) Current provisions, 3) Latest court decisions. Downrank older unless foundational laws in effect]`
-                  }
-
-                  console.log(
-                    '🕐 Temporal reranking activated for current law query'
-                  )
-                } else if (
-                  userQuery.match(/\d{4}/) ||
-                  userQuery.match(/πρόσφατ|τρέχ|ισχύ|current|recent|latest/i)
-                ) {
-                  if (locale === 'el') {
-                    modifiedQuery = `${userQuery} [Λάβετε υπόψη χρονολογική σχετικότητα εγγράφων]`
-                  } else {
-                    modifiedQuery = `${userQuery} [Consider temporal relevance of documents]`
-                  }
-                  console.log('🕐 Implicit temporal need detected')
-                }
-
-                const voyageClient = new VoyageAIClient({
-                  apiKey: process.env.VOYAGE_API_KEY!,
-                })
-
-                console.log(
-                  '🔄 VoyageAI reranking ENABLED - processing results...'
-                )
-
-                const dynamicTopK = Math.min(
-                  adjustedBudgets.rerankTopK,
-                  combined_ai_versions.length,
-                  Math.floor(maxTokensForDocs / 3000)
-                )
-
-                console.log(
-                  `🔄 [${pipelineConfig.pipelineLabel}] Using dynamic topK: ${dynamicTopK} (budget allows ~${Math.floor(
-                    maxTokensForDocs / 3000
-                  )} docs, pipeline rerankK: ${adjustedBudgets.rerankTopK})`
-                )
-
-                const voyage_results: VoyageAI.RerankResponse =
-                  await voyageClient.rerank({
-                    model: 'rerank-2.5-lite',
-                    query: modifiedQuery,
-                    documents: combined_ai_versions,
-                    topK: dynamicTopK,
-                  })
-
-                let ranked_results = voyage_results.data
-                  ?.map((result) => {
-                    if (
-                      typeof result.index === 'number' &&
-                      combined_ai_versions[result.index]
-                    ) {
-                      return combined_ai_versions[result.index]
-                    }
-                    return undefined
-                  })
-                  .filter((item): item is string => item !== undefined)
-
-                if (ranked_results) {
-                  ranked_results = smartContextTrimming(
-                    ranked_results,
-                    Math.floor(maxTokensForDocs / 3.5),
-                    false
-                  )
-
-                  const ranked_reference_types = ranked_results.map(
-                    (aiVersion) => {
-                      const index = combined_ai_versions.indexOf(aiVersion)
-                      return index !== -1
-                        ? combined_reference_types[index]
-                        : 'unknown'
-                    }
-                  )
-
-                  ranked_results = processResultsWithSelectiveUrls(
-                    ranked_results,
-                    ranked_reference_types
-                  )
-                  console.log(
-                    '🔄 Selective URL processing: removed database law URLs only'
-                  )
-
-                  console.log(
-                    `✅ VoyageAI reranking successful: ${ranked_results.length} final results`
-                  )
-
-                  const composition = {
-                    database: ranked_results.filter(
-                      (r) =>
-                        !r.includes('[DeepSeek]') &&
-                        !r.includes('[Perplexity]') &&
-                        !r.includes('[You.com]')
-                    ).length,
-                    deepseek_total: ranked_results.filter((r) =>
-                      r.includes('[DeepSeek]')
-                    ).length,
-                    perplexity_total: ranked_results.filter((r) =>
-                      r.includes('[Perplexity]')
-                    ).length,
-                    youcom_total: ranked_results.filter((r) =>
-                      r.includes('[You.com]')
-                    ).length,
-                  }
-                  console.log(
-                    'Final Composition after VoyageAI reranking:',
-                    composition
-                  )
-
-                  const ranked_references = ranked_results
-                    .map((aiVersion) => {
-                      const index = combined_ai_versions.indexOf(aiVersion)
-                      return index !== -1
-                        ? {
-                            reference: combined_references[index],
-                            type: combined_reference_types[index],
-                          }
-                        : null
-                    })
-                    .filter(
-                      (ref): ref is { reference: string; type: string } =>
-                        ref !== null
-                    )
-
-                  await storePendingReferences(
-                    chatId,
-                    ranked_references.map((r) => r.reference),
-                    ranked_references.map((r) => r.type)
-                  )
-
-                  if (ranked_results.length === 0) {
-                    return locale === 'el'
-                      ? [
-                          'Δεν μπόρεσα να βρω συγκεκριμένες πληροφορίες στη νομική βάση δεδομένων σχετικά με το ερώτημά σας. Παρακαλώ αναδιατυπώστε την ερώτησή σας ή παρέχετε περισσότερες λεπτομέρειες.',
-                        ]
-                      : [
-                          "I couldn't find specific information in the legal database relevant to your query. Please rephrase your question or provide more details.",
-                        ]
-                  }
-
-                  console.log(
-                    '🚨 === FINAL DATA BEING SENT TO CLAUDE (WITH VOYAGEAI RERANKING) === 🚨'
-                  )
-                  console.log(
-                    'Total documents being sent:',
-                    ranked_results.length
-                  )
-
-                  const finalTokenEstimate = estimateTokens(
-                    JSON.stringify(ranked_results)
-                  )
-                  console.log(
-                    `🔥 Final token estimate: ${finalTokenEstimate} tokens`
-                  )
-
-                  ranked_results.forEach((result, index) => {
-                    const source = result.includes('[You.com]')
-                      ? '🌐 You.com'
-                      : result.includes('[Perplexity]')
-                      ? '🔍 Perplexity'
-                      : result.includes('[DeepSeek]')
-                      ? '🤖 DeepSeek'
-                      : '📚 Database'
-
-                    const yearMatches = result.match(/\b(19|20)\d{2}\b/g) || []
-                    const lawMatches =
-                      result.match(/[Νν]\.\s*\d+\/\d{4}|5037\/2023/gi) || []
-
-                    console.log(`[${index + 1}] ${source}`)
-                    if (yearMatches.length > 0)
-                      console.log(`   📅 Years: ${yearMatches.join(', ')}`)
-                    if (lawMatches.length > 0)
-                      console.log(`   📜 Laws: ${lawMatches.join(', ')}`)
-                    console.log(
-                      `   📝 Content preview: ${result
-                        .substring(0, 150)
-                        .replace(/\n/g, ' ')}...`
-                    )
-                    console.log('   ---')
-                  })
-
-                  const sourceCount = {
-                    database: ranked_results.filter(
-                      (r) =>
-                        !r.includes('[You.com]') &&
-                        !r.includes('[Perplexity]') &&
-                        !r.includes('[DeepSeek]')
-                    ).length,
-                    youcom: ranked_results.filter((r) =>
-                      r.includes('[You.com]')
-                    ).length,
-                    perplexity: ranked_results.filter((r) =>
-                      r.includes('[Perplexity]')
-                    ).length,
-                    deepseek: ranked_results.filter((r) =>
-                      r.includes('[DeepSeek]')
-                    ).length,
-                  }
-
-                  console.log('\n📊 Source distribution:')
-                  console.log(`   Database: ${sourceCount.database}`)
-                  console.log(`   You.com: ${sourceCount.youcom}`)
-                  console.log(`   Perplexity: ${sourceCount.perplexity}`)
-                  console.log(`   DeepSeek: ${sourceCount.deepseek}`)
-
-                  console.log('🚨 === END FINAL DATA TO CLAUDE === 🚨\n')
-
-                  return ranked_results
-                }
-              } catch (e) {
-                console.error('❌ Voyage rerank-2.5-lite error:', e)
-
-                const fallbackLimit = Math.floor(maxTokensForDocs / 4000)
-                const trimmedFallback = smartContextTrimming(
-                  combined_ai_versions.slice(0, fallbackLimit * 2),
-                  Math.floor(maxTokensForDocs / 3.5),
-                  false
-                )
-
-                try {
-                  await storePendingReferences(
-                    chatId,
-                    combined_references.slice(0, trimmedFallback.length),
-                    combined_reference_types.slice(0, trimmedFallback.length)
-                  )
-                } catch (refError) {
-                  console.error('❌ Failed to store pending references (rerank fallback path):', refError)
-                }
-
-                const processedResults = processResultsWithSelectiveUrls(
-                  trimmedFallback,
-                  combined_reference_types.slice(0, trimmedFallback.length)
-                )
-
-                console.log(
-                  '🔄 Selective URL processing applied to fallback results'
-                )
-                return processedResults
-              }
-            } else {
-              console.log(
-                '🚫 VoyageAI reranking DISABLED - using raw results with token management'
-              )
-
-              const maxDocsWithoutReranking = Math.floor(
-                maxTokensForDocs / 4000
-              )
-              const trimmedDocuments = smartContextTrimming(
-                combined_ai_versions.slice(0, maxDocsWithoutReranking * 2),
-                Math.floor(maxTokensForDocs / 3.5),
-                false
-              )
-
-              try {
-                await storePendingReferences(
-                  chatId,
-                  combined_references.slice(0, trimmedDocuments.length),
-                  combined_reference_types.slice(0, trimmedDocuments.length)
-                )
-              } catch (refError) {
-                console.error('❌ Failed to store pending references (non-reranked path):', refError)
-              }
-
-              if (trimmedDocuments.length === 0) {
-                return locale === 'el'
-                  ? [
-                      'Δεν μπόρεσα να βρω συγκεκριμένες πληροφορίες στη νομική βάση δεδομένων σχετικά με το ερώτημά σας. Παρακαλώ αναδιατυπώστε την ερώτησή σας ή παρέχετε περισσότερες λεπτομέρειες.',
-                    ]
-                  : [
-                      "I couldn't find specific information in the legal database relevant to your query. Please rephrase your question or provide more details.",
-                    ]
-              }
-
-              const processedResults = processResultsWithSelectiveUrls(
-                trimmedDocuments,
-                combined_reference_types.slice(0, trimmedDocuments.length)
-              )
-
-              console.log(
-                '🔄 Selective URL processing applied to non-reranked results'
-              )
-
-              console.log(
-                '🚨 === FINAL DATA BEING SENT TO CLAUDE (NO RERANKING) === 🚨'
-              )
-              console.log(
-                'Total documents being sent:',
-                processedResults.length
-              )
-
-              const finalTokenEstimate = estimateTokens(
-                JSON.stringify(processedResults)
-              )
-              console.log(
-                `🔥 Final token estimate: ${finalTokenEstimate} tokens`
-              )
-
-              processedResults.forEach((result, index) => {
-                const source = result.includes('[You.com]')
-                  ? '🌐 You.com'
-                  : result.includes('[Perplexity]')
-                  ? '🔍 Perplexity'
-                  : result.includes('[DeepSeek]')
-                  ? '🤖 DeepSeek'
-                  : '📚 Database'
-
-                const yearMatches = result.match(/\b(19|20)\d{2}\b/g) || []
-                const lawMatches =
-                  result.match(/[Νν]\.\s*\d+\/\d{4}|5037\/2023/gi) || []
-
-                console.log(`[${index + 1}] ${source}`)
-                if (yearMatches.length > 0)
-                  console.log(`   📅 Years: ${yearMatches.join(', ')}`)
-                if (lawMatches.length > 0)
-                  console.log(`   📜 Laws: ${lawMatches.join(', ')}`)
-                console.log(
-                  `   📝 Content preview: ${result
-                    .substring(0, 150)
-                    .replace(/\n/g, ' ')}...`
-                )
-                console.log('   ---')
-              })
-
-              const sourceCount = {
-                database: processedResults.filter(
-                  (r) =>
-                    !r.includes('[You.com]') &&
-                    !r.includes('[Perplexity]') &&
-                    !r.includes('[DeepSeek]')
-                ).length,
-                youcom: processedResults.filter((r) => r.includes('[You.com]'))
-                  .length,
-                perplexity: processedResults.filter((r) =>
-                  r.includes('[Perplexity]')
-                ).length,
-                deepseek: processedResults.filter((r) =>
-                  r.includes('[DeepSeek]')
-                ).length,
-              }
-
-              console.log('\n📊 Source distribution (No reranking):')
-              console.log(`   Database: ${sourceCount.database}`)
-              console.log(`   You.com: ${sourceCount.youcom}`)
-              console.log(`   Perplexity: ${sourceCount.perplexity}`)
-              console.log(`   DeepSeek: ${sourceCount.deepseek}`)
-
-              console.log('🚨 === END FINAL DATA TO CLAUDE === 🚨\n')
-
-              return processedResults
-            }
-           } catch (toolError) {
-            console.error('❌ Critical error in answerLawQuestions tool execution:', toolError)
-            // Return a user-friendly message instead of crashing the stream
-            return locale === 'el'
-              ? ['Παρουσιάστηκε σφάλμα κατά την αναζήτηση στη νομική βάση δεδομένων. Παρακαλώ δοκιμάστε ξανά.']
-              : ['An error occurred while searching the legal database. Please try again.']
-           }
-          },
-        }),
-      },
-      messages: convertToCoreMessages(
-        cachedVaultFiles.length > 0
-          ? [...cachedVaultFiles, ...systemMessages]
-          : systemMessages
-      ),
       onFinish: async (event) => {
         const messageContent = event.text || ''
         if (userEmail && subscriptionId && messageContent.trim() !== '') {
@@ -2576,6 +1986,7 @@ export async function POST(req: Request) {
       },
     })
   }
+
 
   console.log('✅ Returning streamText response to client')
   return result.toDataStreamResponse()
