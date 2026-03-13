@@ -1,7 +1,8 @@
 // src/lib/legalSearchPipeline.ts
 // Shared legal search pipeline used by all tools (case analysis, contract comparison,
 // document creation, case study). Provides query analysis, parallel database + internet
-// search, VoyageAI reranking with court decision guarantee.
+// search, deduplication, VoyageAI reranking with court decision guarantee, and smart
+// context trimming — matching the law bot's full pipeline.
 
 import { weaviateLawSearch } from '@/lib/retrievers/weaviate_law_retriever'
 import { weaviateCourtSearch } from '@/lib/retrievers/weaviate_court_retriever'
@@ -10,6 +11,7 @@ import { decodeEscapedString } from '@/lib/decoding'
 import { analyzeQuery } from '@/lib/queryAnalyzer'
 import { searchInternetForLegal } from '@/lib/internetSearchUtils'
 import { searchYouComForLegal } from '@/lib/youComSearchUtils'
+import { deduplicateAllSources, convertToExpectedFormat } from '@/lib/deduplication/lawDeduplication'
 import { VoyageAIClient, VoyageAI } from 'voyageai'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -25,6 +27,8 @@ export interface LegalSearchOptions {
   maxCourtCharacters?: number
   /** Number of top results after reranking (default: 8) */
   rerankedK?: number
+  /** Max tokens for final output (default: 12000) */
+  maxTokens?: number
   /** Conversation messages for query analysis context */
   conversationMessages?: any[]
   /** Locale for query analysis */
@@ -32,7 +36,7 @@ export interface LegalSearchOptions {
 }
 
 export interface LegalSearchResult {
-  /** All results after reranking (laws + courts + internet) */
+  /** All results after dedup + reranking + trimming */
   rerankedResults: string[]
   /** Law results only (before reranking) */
   lawResults: string[]
@@ -46,6 +50,79 @@ export interface LegalSearchResult {
     detectedDomain?: string
     vectorDbQuery: string
   }
+  /** Stats from deduplication */
+  dedupStats?: {
+    totalBefore: number
+    totalAfter: number
+  }
+}
+
+// ─── Internal result type for tracking metadata through pipeline ────────────
+
+interface TaggedResult {
+  content: string
+  fullReference: string
+  referenceType: string
+  confidence?: string
+}
+
+// ─── Smart Context Trimming ─────────────────────────────────────────────────
+
+function smartContextTrimming(
+  documents: string[],
+  maxTokens: number
+): string[] {
+  const estimateTokens = (text: string) => Math.ceil(text.length / 3.5)
+  let totalTokens = 0
+  const result: string[] = []
+
+  // Sort by importance: recent dates and law references score higher
+  const sortedDocs = [...documents].sort((a, b) => {
+    const aScore =
+      (a.match(/202[3-6]/g) || []).length +
+      (a.match(/[Νν]\.\s*\d+\/\d{4}/g) || []).length
+    const bScore =
+      (b.match(/202[3-6]/g) || []).length +
+      (b.match(/[Νν]\.\s*\d+\/\d{4}/g) || []).length
+    return bScore - aScore
+  })
+
+  for (const doc of sortedDocs) {
+    const docTokens = estimateTokens(doc)
+    if (totalTokens + docTokens <= maxTokens) {
+      result.push(doc)
+      totalTokens += docTokens
+    } else {
+      // Try to fit a trimmed version if we have space
+      if (totalTokens < maxTokens * 0.9) {
+        const remainingTokens = maxTokens - totalTokens
+        const remainingChars = remainingTokens * 3.5
+        let partialText = doc.substring(0, remainingChars)
+
+        // Smart truncation at natural boundaries
+        const paragraphBreak = partialText.lastIndexOf('\n\n')
+        const sentenceBreak = Math.max(
+          partialText.lastIndexOf('. '),
+          partialText.lastIndexOf('; '),
+          partialText.lastIndexOf(': ')
+        )
+
+        if (paragraphBreak > partialText.length * 0.5) {
+          partialText = partialText.substring(0, paragraphBreak + 2) + '...'
+        } else if (sentenceBreak > partialText.length * 0.7) {
+          partialText = partialText.substring(0, sentenceBreak + 1) + '...'
+        } else {
+          partialText += '...'
+        }
+
+        result.push(partialText)
+      }
+      break
+    }
+  }
+
+  console.log(`Smart trimming: ${documents.length} docs -> ${result.length} docs, ~${totalTokens} tokens`)
+  return result
 }
 
 // ─── Elasticsearch Fallback ─────────────────────────────────────────────────
@@ -55,7 +132,7 @@ async function retrieveFromElasticsearch(
   index: string,
   maxCharacters: number,
   model_name?: string
-): Promise<string[]> {
+): Promise<TaggedResult[]> {
   try {
     const retrieved_data = await elasticsearchRetrieverHybridSearch(query, {
       knn_k: 20,
@@ -66,17 +143,17 @@ async function retrieveFromElasticsearch(
       model_name,
     })
 
-    const decoded_data = retrieved_data.map(
-      (doc: { aiVersion: string; fullReference: string }) =>
-        decodeEscapedString(doc.fullReference)
-    )
-
     let totalChars = 0
-    const filtered: string[] = []
-    for (const doc of decoded_data) {
-      if (totalChars + doc.length <= maxCharacters) {
-        filtered.push(doc)
-        totalChars += doc.length
+    const filtered: TaggedResult[] = []
+    for (const doc of retrieved_data) {
+      const content = decodeEscapedString(doc.fullReference)
+      if (totalChars + content.length <= maxCharacters) {
+        filtered.push({
+          content,
+          fullReference: content,
+          referenceType: index.includes('pastcase') ? 'database_court' : 'database_law',
+        })
+        totalChars += content.length
       } else break
     }
     return filtered
@@ -92,7 +169,9 @@ async function retrieveFromElasticsearch(
  * Unified legal search pipeline used by all tools.
  * 1. Analyzes query with Gemini/Claude for adapted search queries
  * 2. Runs database + internet searches in parallel
- * 3. Applies VoyageAI reranking with court decision guarantee
+ * 3. Deduplicates with Jaccard similarity, corroboration, recency resolution
+ * 4. Applies VoyageAI reranking with court decision guarantee
+ * 5. Smart context trimming to fit token budget
  */
 export async function runLegalSearchPipeline(
   userQuery: string,
@@ -104,6 +183,7 @@ export async function runLegalSearchPipeline(
     maxLawCharacters = 15_000,
     maxCourtCharacters = 15_000,
     rerankedK = 8,
+    maxTokens = 12_000,
     conversationMessages = [],
     locale = 'el',
   } = options
@@ -135,10 +215,11 @@ export async function runLegalSearchPipeline(
   const perplexityQuery = enhanced?.adaptedQueries?.perplexity || userQuery
   const youcomQuery = enhanced?.adaptedQueries?.youcom || userQuery
 
-  // Step 2: Parallel searches
-  let lawResults: string[] = []
-  let courtResults: string[] = []
-  let internetResults: string[] = []
+  // Step 2: Parallel searches — collect structured results for dedup
+  let dbLawResults: TaggedResult[] = []
+  let dbCourtResults: TaggedResult[] = []
+  let perplexityResults: TaggedResult[] = []
+  let youcomResults: TaggedResult[] = []
 
   const searchPromises: Promise<void>[] = []
 
@@ -155,22 +236,26 @@ export async function runLegalSearchPipeline(
             let totalChars = 0
             for (const r of weaviateResults) {
               if (totalChars + r.aiVersion.length > maxLawCharacters) break
-              lawResults.push(r.aiVersion)
+              dbLawResults.push({
+                content: r.aiVersion,
+                fullReference: r.fullReference,
+                referenceType: 'database_law',
+              })
               totalChars += r.aiVersion.length
             }
-            console.log(`Laws from Weaviate: ${lawResults.length} (${totalChars} chars)`)
+            console.log(`Laws from Weaviate: ${dbLawResults.length} (${totalChars} chars)`)
           }
         } catch (e) {
           console.warn('Weaviate law search failed, using Elasticsearch fallback')
         }
-        if (lawResults.length === 0) {
-          lawResults = await retrieveFromElasticsearch(
+        if (dbLawResults.length === 0) {
+          dbLawResults = await retrieveFromElasticsearch(
             vectorDbQuery,
             '0825_greek_laws_collection',
             maxLawCharacters,
             'voyage-3.5-lite'
           )
-          console.log(`Laws from Elasticsearch: ${lawResults.length}`)
+          console.log(`Laws from Elasticsearch: ${dbLawResults.length}`)
         }
       })()
     )
@@ -186,21 +271,25 @@ export async function runLegalSearchPipeline(
             let totalChars = 0
             for (const r of weaviateResults) {
               if (totalChars + r.aiVersion.length > maxCourtCharacters) break
-              courtResults.push(r.aiVersion)
+              dbCourtResults.push({
+                content: r.aiVersion,
+                fullReference: r.fullReference,
+                referenceType: 'database_court',
+              })
               totalChars += r.aiVersion.length
             }
-            console.log(`Courts from Weaviate: ${courtResults.length} (${totalChars} chars)`)
+            console.log(`Courts from Weaviate: ${dbCourtResults.length} (${totalChars} chars)`)
           }
         } catch (e) {
           console.warn('Weaviate court search failed, using Elasticsearch fallback')
         }
-        if (courtResults.length === 0) {
-          courtResults = await retrieveFromElasticsearch(
+        if (dbCourtResults.length === 0) {
+          dbCourtResults = await retrieveFromElasticsearch(
             vectorDbQuery,
             '0825_pastcase_collection',
             maxCourtCharacters
           )
-          console.log(`Courts from Elasticsearch: ${courtResults.length}`)
+          console.log(`Courts from Elasticsearch: ${dbCourtResults.length}`)
         }
       })()
     )
@@ -222,9 +311,12 @@ export async function runLegalSearchPipeline(
           ]
           for (const item of allItems) {
             if (item.confidence !== 'low' || item.source_domain !== 'placeholder') {
-              internetResults.push(
-                `**[Perplexity] ${item.title}**\n\n${item.preview_text}\n\n[Source: ${item.source_domain}](${item.url})`
-              )
+              perplexityResults.push({
+                content: `**[Perplexity] ${item.title}**\n\n${item.preview_text}\n\n[Source: ${item.source_domain}](${item.url})`,
+                fullReference: item.url || '#',
+                referenceType: item.category === 'jurisprudence' ? 'perplexity_jurisprudence' : 'perplexity_legislation',
+                confidence: item.confidence,
+              })
             }
           }
         }
@@ -246,9 +338,12 @@ export async function runLegalSearchPipeline(
           ]
           for (const item of allItems) {
             if (item.confidence !== 'low' || item.source_domain !== 'placeholder') {
-              internetResults.push(
-                `**[You.com] ${item.title}**\n\n${item.preview_text}\n\n[Source: ${item.source_domain}](${item.url})`
-              )
+              youcomResults.push({
+                content: `**[You.com] ${item.title}**\n\n${item.preview_text}\n\n[Source: ${item.source_domain}](${item.url})`,
+                fullReference: item.url || '#',
+                referenceType: item.category === 'jurisprudence' ? 'youcom_jurisprudence' : 'youcom_legislation',
+                confidence: item.confidence,
+              })
             }
           }
         }
@@ -260,17 +355,20 @@ export async function runLegalSearchPipeline(
 
   await Promise.allSettled(searchPromises)
 
-  console.log(`Search totals: laws=${lawResults.length}, courts=${courtResults.length}, internet=${internetResults.length}`)
+  const totalBefore = dbLawResults.length + dbCourtResults.length + perplexityResults.length + youcomResults.length
+  console.log(`Search totals: dbLaws=${dbLawResults.length}, dbCourts=${dbCourtResults.length}, perplexity=${perplexityResults.length}, youcom=${youcomResults.length}`)
 
-  // Step 3: Combine and rerank
-  const combined = [...lawResults, ...courtResults, ...internetResults]
+  // Return early arrays for callers that want raw counts
+  const lawResultStrings = dbLawResults.map(r => r.content)
+  const courtResultStrings = dbCourtResults.map(r => r.content)
+  const internetResultStrings = [...perplexityResults, ...youcomResults].map(r => r.content)
 
-  if (combined.length === 0) {
+  if (totalBefore === 0) {
     return {
       rerankedResults: [],
-      lawResults,
-      courtResults,
-      internetResults,
+      lawResults: lawResultStrings,
+      courtResults: courtResultStrings,
+      internetResults: internetResultStrings,
       queryAnalysis: enhanced ? {
         legalField: enhanced.legalField,
         detectedDomain: enhanced.detectedDomain,
@@ -279,53 +377,85 @@ export async function runLegalSearchPipeline(
     }
   }
 
-  let rerankedResults = combined
+  // Step 3: Deduplication — Jaccard similarity, corroboration, recency resolution
+  const databaseResults = [...dbLawResults, ...dbCourtResults]
+  const dedupResults = deduplicateAllSources(
+    databaseResults,
+    perplexityResults,
+    [], // no deepseek in tools
+    youcomResults
+  )
+  const dedupFormatted = convertToExpectedFormat(dedupResults)
+  const totalAfter = dedupFormatted.aiVersions.length
 
-  try {
-    const voyageClient = new VoyageAIClient({
-      apiKey: process.env.VOYAGE_API_KEY!,
-    })
+  console.log(`Dedup: ${totalBefore} -> ${totalAfter} unique results`)
 
-    const dynamicTopK = Math.min(rerankedK, combined.length)
+  // Step 4: VoyageAI reranking with court decision guarantee
+  let rerankedResults = dedupFormatted.aiVersions
 
-    const voyageResponse: VoyageAI.RerankResponse = await voyageClient.rerank({
-      model: 'rerank-2.5-lite',
-      query: userQuery,
-      documents: combined,
-      topK: dynamicTopK,
-    })
+  if (rerankedResults.length > 0) {
+    try {
+      const voyageClient = new VoyageAIClient({
+        apiKey: process.env.VOYAGE_API_KEY!,
+      })
 
-    let ranked = voyageResponse.data
-      ?.map((r) => (typeof r.index === 'number' ? combined[r.index] : undefined))
-      .filter((item): item is string => item !== undefined)
+      const dynamicTopK = Math.min(rerankedK, rerankedResults.length)
 
-    if (ranked && ranked.length > 0) {
-      // Court decision guarantee
-      if (includeGreekCourtDecisions && courtResults.length > 0) {
-        const missingCourts = courtResults.filter((cr) => !ranked!.includes(cr))
-        if (missingCourts.length > 0) {
-          console.log(`Guaranteeing ${missingCourts.length} court decisions in results`)
-          ranked = [...ranked, ...missingCourts.slice(0, 2)]
+      const voyageResponse: VoyageAI.RerankResponse = await voyageClient.rerank({
+        model: 'rerank-2.5-lite',
+        query: userQuery,
+        documents: rerankedResults,
+        topK: dynamicTopK,
+      })
+
+      let ranked = voyageResponse.data
+        ?.map((r) => (typeof r.index === 'number' ? rerankedResults[r.index] : undefined))
+        .filter((item): item is string => item !== undefined)
+
+      if (ranked && ranked.length > 0) {
+        // Court decision guarantee
+        if (includeGreekCourtDecisions && courtResultStrings.length > 0) {
+          // Find court results that survived dedup but not reranking
+          const courtTypes = dedupFormatted.referenceTypes
+          const courtIndices = courtTypes
+            .map((t, i) => ({ t, i }))
+            .filter(({ t }) => t.includes('court') || t.includes('case') || t.includes('jurisprudence'))
+            .map(({ i }) => i)
+
+          const missingCourts = courtIndices
+            .map(i => rerankedResults[i])
+            .filter(c => c && !ranked!.includes(c))
+
+          if (missingCourts.length > 0) {
+            console.log(`Guaranteeing ${missingCourts.length} court decisions in results`)
+            ranked = [...ranked, ...missingCourts.slice(0, 2)]
+          }
         }
-      }
 
-      rerankedResults = ranked
-      console.log(`Reranked: ${rerankedResults.length} results`)
+        rerankedResults = ranked
+        console.log(`Reranked: ${rerankedResults.length} results`)
+      }
+    } catch (e) {
+      console.error('Voyage reranking error:', e)
     }
-  } catch (e) {
-    console.error('Voyage reranking error:', e)
-    // Fall through with combined results
   }
+
+  // Step 5: Smart context trimming
+  rerankedResults = smartContextTrimming(rerankedResults, maxTokens)
 
   return {
     rerankedResults,
-    lawResults,
-    courtResults,
-    internetResults,
+    lawResults: lawResultStrings,
+    courtResults: courtResultStrings,
+    internetResults: internetResultStrings,
     queryAnalysis: enhanced ? {
       legalField: enhanced.legalField,
       detectedDomain: enhanced.detectedDomain,
       vectorDbQuery,
     } : undefined,
+    dedupStats: {
+      totalBefore,
+      totalAfter,
+    },
   }
 }
