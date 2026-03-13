@@ -32,7 +32,8 @@ import {
   claudeAnalyzeQuery,
   localLlmAnalyzeQuery,
 } from '@/lib/chatApiUtils'
-// z (zod) no longer needed — tools removed
+import { analyzeQuery, type QueryAnalysisResult } from '@/lib/queryAnalyzer'
+import { calculateSourceRichness } from '@/lib/sourceRichness'
 import { recordMessageUsage } from '../../actions/subscription'
 import { revalidatePath } from 'next/cache'
 import {
@@ -1516,49 +1517,32 @@ export async function POST(req: Request) {
     })
 
     // === PRE-SEARCH: Run all searches BEFORE calling Claude ===
-    // This eliminates tool-call complexity and matches the lawgic_corp architecture.
+    // Full lawgic_corp pipeline: Query Analysis → Search → Court-Law Enrichment → Dedup → Rerank → Richness
 
     let combined_ai_versions: string[] = []
     let combined_references: string[] = []
     let combined_reference_types: string[] = []
 
-    const queryIntent = await analyzeQueryIntent(userQuery)
+    // STEP 1: Query Analysis (Gemini → Claude fallback)
+    const currentDate = new Date().toISOString().split('T')[0]
+    const queryAnalysis = await analyzeQuery(userQuery, currentDate)
 
-    let enhancedAnalysis = null
-    try {
-      console.log(
-        '🧠 Starting Claude analysis for query:',
-        userQuery.substring(0, 100) + '...'
-      )
-      enhancedAnalysis = await claudeAnalyzeQuery(userQuery)
-      console.log('✅ Claude analysis completed:', {
-        categories: enhancedAnalysis.legalCategories,
-        keywords: enhancedAnalysis.keywords,
-        laws: enhancedAnalysis.detectedLaws,
-        temporal: enhancedAnalysis.temporalIntent,
-        confidence: enhancedAnalysis.confidence,
-      })
-    } catch (error) {
-      console.log(
-        '❌ Claude analysis failed, using basic analysis:',
-        error instanceof Error ? error.message : String(error)
-      )
-      enhancedAnalysis = null
+    // If query needs clarification, return early
+    if (queryAnalysis.quality === 'needs_clarification' && queryAnalysis.clarification) {
+      console.log('❓ Query needs clarification:', queryAnalysis.clarification.reason)
+      // Don't search — let Claude ask for clarification
     }
 
-    const combinedQueryIntent = {
-      ...queryIntent,
-      legalCategories: enhancedAnalysis?.legalCategories || ['γενικό'],
-      keywords: [...(enhancedAnalysis?.keywords || []), 'ισχύον', 'τρέχων'],
-      enhancedLaws: enhancedAnalysis?.detectedLaws || [],
-      enhancedTemporal: enhancedAnalysis?.temporalIntent || true,
-      analysisConfidence: enhancedAnalysis?.confidence || 'low',
-    }
+    // Use adapted queries for each search source
+    const vectorDbQuery = queryAnalysis.enhanced?.adaptedQueries?.vectorDb || userQuery
+    const perplexityQuery = queryAnalysis.enhanced?.adaptedQueries?.perplexity || userQuery
+    const youcomQuery = queryAnalysis.enhanced?.adaptedQueries?.youcom || userQuery
+    const legalField = queryAnalysis.enhanced?.legalField
 
     console.log(
-      `🚀 [${pipelineConfig.pipelineLabel}] Starting searches - ES:${
-        preferences.includeGreekLaws || preferences.includeGreekCourtDecisions
-      } PX:${!!PERPLEXITY_API_KEY} DS:${USE_DEEPSEEK} YC:${USE_YOUCOM}`
+      `🚀 [${pipelineConfig.pipelineLabel}] Starting searches - WV_LAW:${
+        preferences.includeGreekLaws
+      } WV_COURT:${preferences.includeGreekCourtDecisions} PX:${!!PERPLEXITY_API_KEY} DS:${USE_DEEPSEEK} YC:${USE_YOUCOM}`
     )
     const parallelStartTime = Date.now()
 
@@ -1573,10 +1557,10 @@ export async function POST(req: Request) {
     // Helper: retrieve laws from Weaviate with Elasticsearch fallback
     const retrieveLaws = async (query: string, maxChars: number) => {
       try {
-        console.log('📚 Attempting Weaviate law retrieval (GreekLegalDocuments)...')
+        console.log('📚 [LAWS-WV] Starting Weaviate law retrieval...')
         const weaviateResults = await retrieveLawsFromWeaviate(query, maxChars)
         if (weaviateResults.aiVersions.length > 0) {
-          console.log(`✅ Weaviate law retrieval: ${weaviateResults.aiVersions.length} results`)
+          console.log(`✅ [LAWS-WV] Retrieved ${weaviateResults.aiVersions.length} documents`)
           return weaviateResults
         }
         console.log('⚠️ Weaviate law search returned no results, falling back to Elasticsearch')
@@ -1587,11 +1571,11 @@ export async function POST(req: Request) {
     }
 
     // Helper: retrieve court decisions from Weaviate only (no Elasticsearch fallback)
-    const retrieveCourtDecisions = async (maxChars: number) => {
+    const retrieveCourtDecisions = async (query: string, maxChars: number) => {
       try {
-        console.log('📚 Attempting Weaviate court retrieval...')
-        const weaviateResults = await retrieveCourtDecisionsFromWeaviate(userQuery, maxChars)
-        console.log(`✅ Weaviate court retrieval: ${weaviateResults.aiVersions.length} results`)
+        console.log(`📚 [WV-COURT] Starting Weaviate court retrieval...${legalField ? ` (domain: ${legalField})` : ''}`)
+        const weaviateResults = await retrieveCourtDecisionsFromWeaviate(query, maxChars)
+        console.log(`✅ [WV-COURT] Completed: ${weaviateResults.aiVersions.length} results`)
         return weaviateResults
       } catch (error) {
         console.warn('⚠️ Weaviate court retrieval failed:', error)
@@ -1639,8 +1623,8 @@ export async function POST(req: Request) {
             const balancedMaxCaseChars = Math.floor(adjustedBudgets.maxCaseChars / 2)
 
             const [lawResults, caseResults] = await Promise.all([
-              retrieveLaws(userQuery, balancedMaxLawChars),
-              retrieveCourtDecisions(balancedMaxCaseChars),
+              retrieveLaws(vectorDbQuery, balancedMaxLawChars),
+              retrieveCourtDecisions(vectorDbQuery, balancedMaxCaseChars),
             ])
 
             law_data = lawResults
@@ -1655,7 +1639,7 @@ export async function POST(req: Request) {
       allSearchPromises.push(
         (async () => {
           try {
-            law_data = await retrieveLaws(userQuery, adjustedBudgets.maxLawChars)
+            law_data = await retrieveLaws(vectorDbQuery, adjustedBudgets.maxLawChars)
             console.log('✅ Weaviate/ES law search completed')
           } catch (error) {
             console.error('❌ [ES] Law search failed:', error)
@@ -1666,7 +1650,7 @@ export async function POST(req: Request) {
       allSearchPromises.push(
         (async () => {
           try {
-            pastcase_data = await retrieveCourtDecisions(adjustedBudgets.maxCaseChars)
+            pastcase_data = await retrieveCourtDecisions(vectorDbQuery, adjustedBudgets.maxCaseChars)
             console.log('✅ Court decisions retrieval completed')
           } catch (error) {
             console.error('❌ Case search failed:', error)
@@ -1685,7 +1669,7 @@ export async function POST(req: Request) {
             }
 
             const result = await Promise.race([
-              searchDeepSeekForLegal(userQuery),
+              searchDeepSeekForLegal(vectorDbQuery),
               new Promise<null>((_, reject) =>
                 setTimeout(() => reject(new Error('DeepSeek timeout')), 30000)
               ),
@@ -1707,7 +1691,7 @@ export async function POST(req: Request) {
         (async () => {
           try {
             const result = await Promise.race([
-              searchInternetForLegal(userQuery),
+              searchInternetForLegal(perplexityQuery),
               new Promise<null>((_, reject) =>
                 setTimeout(() => reject(new Error('Perplexity timeout')), 60000)
               ),
@@ -1729,7 +1713,7 @@ export async function POST(req: Request) {
         (async () => {
           try {
             const result = await Promise.race([
-              searchYouComForLegal(userQuery),
+              searchYouComForLegal(youcomQuery),
               new Promise<null>((_, reject) =>
                 setTimeout(() => reject(new Error('You.com timeout')), 35000)
               ),
@@ -1763,16 +1747,72 @@ export async function POST(req: Request) {
       `⏱️ All searches completed in ${Date.now() - parallelStartTime}ms`
     )
 
-    const combinedResults = combineAllSources(
-      { law_data, pastcase_data },
-      deepSeekResult,
-      perplexityResult,
-      youComResult
+    // ========== DEDUPLICATION PIPELINE (lawgic_corp architecture) ==========
+    // Step 1: Prepare database results arrays
+    const databaseResultsForDedup: any[] = []
+    if (law_data?.aiVersions && Array.isArray(law_data.aiVersions)) {
+      law_data.aiVersions.forEach((content: string, index: number) => {
+        databaseResultsForDedup.push({
+          content,
+          fullReference: law_data.fullReferences?.[index] || '#',
+          referenceType: law_data.referenceTypes?.[index] || 'database_law',
+        })
+      })
+    }
+    if (pastcase_data?.aiVersions && Array.isArray(pastcase_data.aiVersions)) {
+      pastcase_data.aiVersions.forEach((content: string, index: number) => {
+        databaseResultsForDedup.push({
+          content,
+          fullReference: pastcase_data.fullReferences?.[index] || '#',
+          referenceType: pastcase_data.referenceTypes?.[index] || 'database_case',
+        })
+      })
+    }
+
+    // Step 2: Prepare AI search results arrays
+    const prepareAIResults = (result: StructuredPerplexityResults | null, label: string) => {
+      const results: any[] = []
+      if (!result || !result.success) return results
+      const categories = ['legislation', 'jurisprudence', 'developments'] as const
+      categories.forEach((cat) => {
+        const items = result[cat]
+        if (items && Array.isArray(items)) {
+          items.forEach((item) => {
+            if (item.confidence !== 'low' || item.source_domain !== 'placeholder') {
+              results.push({
+                content: `**[${label}] ${item.title}**\n\n${item.preview_text}\n\n[Πηγή: ${item.source_domain}](${item.url})\nΕμπιστοσύνη: ${item.confidence}`,
+                fullReference: item.url || '#',
+                referenceType: `${label.toLowerCase()}_${cat === 'jurisprudence' ? 'jurisprudence' : cat === 'legislation' ? 'legislation' : 'development'}`,
+                confidence: item.confidence,
+              })
+            }
+          })
+        }
+      })
+      return results
+    }
+
+    const deepSeekResultsForDedup = prepareAIResults(deepSeekResult, 'DeepSeek')
+    const perplexityResultsForDedup = prepareAIResults(perplexityResult, 'Perplexity')
+    const youComResultsForDedup = prepareAIResults(youComResult, 'You.com')
+
+    console.log(`📊 Pre-dedup counts: DB=${databaseResultsForDedup.length}, DS=${deepSeekResultsForDedup.length}, PX=${perplexityResultsForDedup.length}, YC=${youComResultsForDedup.length}`)
+
+    // Step 3: Run deduplication with similarity scoring & corroboration
+    const processedResults = deduplicateAllSources(
+      databaseResultsForDedup,
+      perplexityResultsForDedup,
+      deepSeekResultsForDedup,
+      youComResultsForDedup
     )
 
-    combined_ai_versions = combinedResults.aiVersions
-    combined_references = combinedResults.fullReferences
-    combined_reference_types = combinedResults.referenceTypes
+    console.log(`✅ Dedup complete: ${processedResults.length} unique results from ${databaseResultsForDedup.length + deepSeekResultsForDedup.length + perplexityResultsForDedup.length + youComResultsForDedup.length} total`)
+
+    // Step 4: Convert to expected format
+    const dedupFormatted = convertToExpectedFormat(processedResults)
+    combined_ai_versions = dedupFormatted.aiVersions
+    combined_references = dedupFormatted.fullReferences
+    combined_reference_types = dedupFormatted.referenceTypes
 
     // Inject graph context (amendment chains, version history) into results
     if (graphContextResult) {
@@ -1791,7 +1831,11 @@ export async function POST(req: Request) {
       combined_ai_versions.push(finalResult)
     }
 
-    const reservedForOutput = maxOutputTokenSize + 2000
+    // Step 5: Source richness scoring - dynamic maxTokens based on source quality
+    const richnessScore = calculateSourceRichness(processedResults, 0) // voyageHighScoreCount updated after reranking
+    console.log(`📊 Source Richness: tier=${richnessScore.tier}, maxTokens=${richnessScore.maxTokens}`)
+
+    const reservedForOutput = Math.max(maxOutputTokenSize, richnessScore.maxTokens) + 2000
     const maxTokensForDocs =
       MAX_CONTEXT_TOKENS - totalCurrentTokens - reservedForOutput
 
@@ -1834,7 +1878,28 @@ export async function POST(req: Request) {
           })
           .filter((item): item is string => item !== undefined)
 
+        // Count high-scoring results for richness recalculation
+        const voyageHighScoreCount = voyage_results.data?.filter(
+          (r) => typeof r.relevanceScore === 'number' && r.relevanceScore > 0.7
+        ).length || 0
+
         if (ranked_results) {
+          // Guarantee court decisions are included in results
+          const courtDecisionIndices = combined_reference_types
+            .map((type, idx) => ({ type, idx }))
+            .filter((item) => item.type.includes('database_case') || item.type.includes('database_court') || item.type.includes('jurisprudence'))
+            .map((item) => item.idx)
+
+          const missingCourtDecisions = courtDecisionIndices
+            .filter((idx) => !ranked_results!.includes(combined_ai_versions[idx]))
+            .map((idx) => combined_ai_versions[idx])
+            .filter(Boolean)
+
+          if (missingCourtDecisions.length > 0) {
+            console.log(`Guaranteeing ${missingCourtDecisions.length} court decisions in results`)
+            ranked_results = [...ranked_results, ...missingCourtDecisions]
+          }
+
           ranked_results = smartContextTrimming(
             ranked_results,
             Math.floor(maxTokensForDocs / 3.5),
@@ -1907,9 +1972,10 @@ export async function POST(req: Request) {
     )
 
     // Inject search results into messages for Claude (pre-search architecture)
+    const qualityHint = locale === 'el' ? richnessScore.qualityHintEl : richnessScore.qualityHint
     const contextMessage =
       finalSearchResults.length > 0
-        ? `\n\nRelevant legal documents and information:\n\n${finalSearchResults.join(
+        ? `\n\n[Source Quality: ${richnessScore.tier} | ${qualityHint}]\n\nRelevant legal documents and information:\n\n${finalSearchResults.join(
             '\n\n---\n\n'
           )}`
         : ''
@@ -1932,7 +1998,7 @@ export async function POST(req: Request) {
       model: selectedModel,
       system: pipelineEnhancedSystemMessage,
       messages: enrichedMessages,
-      maxTokens: maxOutputTokenSize,
+      maxTokens: richnessScore.maxTokens,
       experimental_telemetry: telemetrySettings,
       onFinish: async (event) => {
         const messageContent = event.text || ''
