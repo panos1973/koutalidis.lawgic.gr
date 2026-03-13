@@ -8,23 +8,16 @@ import { getLLMModel } from '@/lib/models/llmModelFactory'
 import { CONTRACT_PROMPTS } from '@/lib/prompts/contract'
 import { createContractVectorStore } from '@/app/[locale]/actions/contract_action'
 import { cookies } from 'next/headers'
-import { elasticsearchRetrieverHybridSearch } from '@/lib/retrievers/elasticsearch_retriever'
-import { decodeEscapedString } from '@/lib/decoding'
-import { VoyageAIClient, VoyageAI } from 'voyageai'
 import { AISDKExporter } from 'langsmith/vercel'
 import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
 import { revalidatePath } from 'next/cache'
 import { extractContentFromUrl } from '@/app/[locale]/actions/library_actions'
 import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
 import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
+import { runLegalSearchPipeline } from '@/lib/legalSearchPipeline'
 
 export const maxDuration = 180
 const maxOutputTokenSize = 8192
-const max_law_characters_v2 = 10_000
-const max_pastcase_characters = 15_000
-const MAX_RESULTS_PER_SOURCE = 3
-const useVoyage = true
-const reranked_k = 5
 
 // Define interfaces for data types
 interface ContractFileData {
@@ -55,54 +48,6 @@ async function extractContractStructure(url: string, type: string) {
     parties: parties.slice(0, 4),
     documentLength: content.length
   })
-}
-
-async function retrieveAndFilterData(
-  query: string,
-  index: string,
-  maxCharacters: number,
-  model_name?: string
-) {
-  console.log(`Starting retrieveAndFilterData for index: ${index}`)
-  try {
-    console.log('Calling elasticsearchRetrieverHybridSearch with params:', {
-      query,
-      index,
-      maxCharacters,
-      model_name,
-    })
-    const retrieved_data = await elasticsearchRetrieverHybridSearch(query, {
-      knn_k: 20,
-      knn_num_candidates: 60,
-      rrf_rank_window_size: 15,
-      rrf_rank_constant: 20,
-      index: index,
-      model_name: model_name,
-    })
-
-    const decoded_data = retrieved_data.map(
-      (doc: { aiVersion: string; fullReference: string }) =>
-        decodeEscapedString(doc.fullReference)
-    )
-
-    let total_characters = 0
-    const filtered_data = []
-
-    for (const doc of decoded_data) {
-      if (total_characters + doc.length <= maxCharacters) {
-        filtered_data.push(doc)
-        total_characters += doc.length
-      } else {
-        console.log('max_characters reached in ', filtered_data.length)
-        break
-      }
-    }
-
-    return filtered_data
-  } catch (error) {
-    console.error('Error in retrieveAndFilterData:', error)
-    return []
-  }
 }
 
 export async function POST(req: Request) {
@@ -237,15 +182,40 @@ export async function POST(req: Request) {
           tools: {
             searchContractDocuments: tool({
               description:
-                'Search through uploaded contract documents for relevant information',
+                'Search through uploaded contract documents and relevant legal sources (laws and court decisions) for information needed to analyze or draft the contract.',
               parameters: z.object({
                 query: z
                   .string()
-                  .describe('Search query for contract documents'),
+                  .describe('Search query for contract documents and legal sources'),
               }),
               execute: traceable(
                 async ({ query }) => {
-                  return 'Contract documents are attached in messages already'
+                  console.log('Contract search tool executing with query:', query)
+
+                  const results: { contractContext: string; legalSources?: string[] } = {
+                    contractContext: 'Contract documents are attached in messages already.',
+                  }
+
+                  // Run legal search if enabled
+                  if (includeGreekLaws || includeGreekCourtDecisions) {
+                    try {
+                      const searchResults = await runLegalSearchPipeline(userQuery, {
+                        includeGreekLaws,
+                        includeGreekCourtDecisions,
+                        conversationMessages: messages,
+                        locale,
+                      })
+
+                      if (searchResults.rerankedResults.length > 0) {
+                        results.legalSources = searchResults.rerankedResults
+                        console.log(`Contract legal search: ${searchResults.rerankedResults.length} results (laws=${searchResults.lawResults.length}, courts=${searchResults.courtResults.length}, internet=${searchResults.internetResults.length})`)
+                      }
+                    } catch (e) {
+                      console.warn('Legal search failed in contract tool:', e)
+                    }
+                  }
+
+                  return JSON.stringify(results)
                 },
                 { name: 'contract_search_documents', run_type: 'retriever' }
               ),
