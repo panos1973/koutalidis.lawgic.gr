@@ -12,31 +12,43 @@ import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 
 const getLocaleFromCookies = () => {
-  const cookieStore = cookies()
-  const localeCookie = cookieStore.get('NEXT_LOCALE')
-  return localeCookie ? localeCookie.value : 'el'
+  try {
+    const cookieStore = cookies()
+    const localeCookie = cookieStore.get('NEXT_LOCALE')
+    return localeCookie ? localeCookie.value : 'el'
+  } catch (error) {
+    console.error('Failed to read locale from cookies:', error)
+    return 'el'
+  }
 }
 
 // ─── REVIEWS (CRUD) ────────────────────────────────────────────────
 
 export async function createTabularReview(userId: string, title?: string) {
   const locale = getLocaleFromCookies()
-  const defaultTitle =
-    locale === 'el'
-      ? `Tabular Review ${Math.floor(Math.random() * 10000)}`
-      : `Tabular Review ${Math.floor(Math.random() * 10000)}`
+  const defaultTitle = `Tabular Review ${Math.floor(Math.random() * 10000)}`
 
-  const [review] = await db
-    .insert(tabular_reviews)
-    .values({
-      userId,
-      title: title || defaultTitle,
-      language: locale,
-    })
-    .returning()
+  try {
+    const result = await db
+      .insert(tabular_reviews)
+      .values({
+        userId,
+        title: title || defaultTitle,
+        language: locale,
+      })
+      .returning()
 
-  revalidatePath(`/${locale}/tabular-review`)
-  return review.id
+    if (!result || result.length === 0) {
+      throw new Error('Failed to create review: no result returned from database')
+    }
+
+    const review = result[0]
+    revalidatePath(`/${locale}/tabular-review`)
+    return review.id
+  } catch (error) {
+    console.error('Error in createTabularReview:', error)
+    throw error
+  }
 }
 
 export async function getTabularReviews(userId: string) {

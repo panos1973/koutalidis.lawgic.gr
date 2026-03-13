@@ -14,13 +14,14 @@ export const maxDuration = 60
 export default async function TabularReviewDetailPage({
   params,
 }: {
-  params: { id: string }
+  params: { id: string; locale: string }
 }) {
   const { userId } = auth()
-  if (!userId) redirect('/sign-in')
+  const locale = params.locale || 'el'
+  if (!userId) redirect(`/${locale}/sign-in`)
 
   const review = await getTabularReview(params.id)
-  if (!review) redirect('/tabular-review')
+  if (!review) redirect(`/${locale}/tabular-review`)
 
   const [columns, documents, cells] = await Promise.all([
     getTabularReviewColumns(params.id),

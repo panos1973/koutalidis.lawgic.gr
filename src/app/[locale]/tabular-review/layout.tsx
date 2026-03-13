@@ -6,12 +6,16 @@ import { KoutalidisSidebar } from '@/components/koutalidis/layout/KoutalidisSide
 import { BreadcrumbBar } from '@/components/koutalidis/layout/BreadcrumbBar'
 
 function isKoutalidisTenant(): boolean {
-  const headersList = headers()
-  const host = headersList.get('host') || ''
-  return (
-    host.includes('koutalidis.lawgic.gr') ||
-    process.env.NEXT_PUBLIC_TENANT_ID === 'koutalidis'
-  )
+  try {
+    const headersList = headers()
+    const host = headersList.get('host') || ''
+    return (
+      host.includes('koutalidis.lawgic.gr') ||
+      process.env.NEXT_PUBLIC_TENANT_ID === 'koutalidis'
+    )
+  } catch {
+    return process.env.NEXT_PUBLIC_TENANT_ID === 'koutalidis'
+  }
 }
 
 export const metadata: Metadata = {
