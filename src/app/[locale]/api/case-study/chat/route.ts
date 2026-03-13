@@ -15,11 +15,10 @@ import { getLLMModel } from '@/lib/models/llmModelFactory'
 import { CASE_STUDY_PROMPTS } from '@/lib/prompts/case_study'
 import { saveCaseMessage } from '@/app/[locale]/actions/case_study_actions'
 import { cookies } from 'next/headers'
-import { elasticsearchRetrieverHybridSearch } from '@/lib/retrievers/elasticsearch_retriever'
-import { weaviateCourtSearch } from '@/lib/retrievers/weaviate_court_retriever'
-import { weaviateLawSearch } from '@/lib/retrievers/weaviate_law_retriever'
-import { decodeEscapedString } from '@/lib/decoding'
 import { VoyageAIClient, VoyageAI } from 'voyageai'
+import { elasticsearchRetrieverHybridSearch } from '@/lib/retrievers/elasticsearch_retriever'
+import { decodeEscapedString } from '@/lib/decoding'
+import { runLegalSearchPipeline } from '@/lib/legalSearchPipeline'
 import { AISDKExporter } from 'langsmith/vercel'
 
 import { searchSimilarDocuments } from '@/lib/elasticsearch_/embedding'
@@ -327,118 +326,32 @@ export async function POST(req: Request) {
                 getCharacterLimits(userDocumentCount);
               console.log(`📊 Dynamic limits for ${userDocumentCount} docs: Laws=${max_law_characters_v2}, Cases=${max_pastcase_characters}`);
 
-              let combined_retrieved_data: string[] = []
+              // Run upgraded legal search pipeline (query analysis + parallel search + reranking + court guarantee)
+              // Use dynamic character limits based on document count
+              const dynamicRerankedK = Math.min(15, Math.max(5, Math.ceil(caseFileCount / 3)))
+              console.log(`Dynamic reranking: ${dynamicRerankedK} results for ${caseFileCount} documents`)
 
-              // Add law search results — Weaviate GreekLegalDocuments first, ES fallback
-              if (includeGreekLaws) {
-                let lawResults: string[] = []
-                try {
-                  const weaviateLawResults = await weaviateLawSearch(userQuery, { limit: 20 })
-                  if (weaviateLawResults.length > 0) {
-                    lawResults = weaviateLawResults.map(r => r.fullReference).slice(0, Math.ceil(max_law_characters_v2 / 3000))
-                    console.log(`Greek Laws from Weaviate: ${lawResults.length}`)
-                  }
-                } catch (e) {
-                  console.warn('⚠️ Weaviate law search failed, using Elasticsearch fallback')
-                }
-                if (lawResults.length === 0) {
-                  lawResults = await retrieveAndFilterData(
-                    userQuery,
-                    '0825_greek_laws_collection',
-                    max_law_characters_v2,
-                    'voyage-3.5-lite',
-                    userDocumentCount
-                  )
-                }
-                console.log('Greek Laws retrieved:', lawResults.length)
-                combined_retrieved_data = [...lawResults]
-              }
+              const searchResults = await runLegalSearchPipeline(userQuery, {
+                includeGreekLaws: includeGreekLaws ?? true,
+                includeGreekCourtDecisions: includeGreekCourtDecisions ?? false,
+                maxLawCharacters: max_law_characters_v2,
+                maxCourtCharacters: max_pastcase_characters,
+                rerankedK: dynamicRerankedK,
+                conversationMessages: messages,
+                locale,
+              })
 
-              if (includeGreekCourtDecisions) {
-                let courtResults: string[] = []
-                try {
-                  const weaviateResults = await weaviateCourtSearch(userQuery)
-                  if (weaviateResults.length > 0) {
-                    courtResults = weaviateResults.map(r => r.fullReference).slice(0, Math.ceil(max_pastcase_characters / 3000))
-                    console.log(`Court Decisions from Weaviate: ${courtResults.length}`)
-                  }
-                } catch (e) {
-                  console.warn('⚠️ Weaviate court search failed, using Elasticsearch fallback')
-                }
-                if (courtResults.length === 0) {
-                  courtResults = await retrieveAndFilterData(
-                    userQuery,
-                    '0825_pastcase_collection',
-                    max_pastcase_characters,
-                    'voyage-3.5-lite',
-                    userDocumentCount
-                  )
-                }
-                console.log('Court Decisions retrieved:', courtResults.length)
-                combined_retrieved_data = [
-                  ...combined_retrieved_data,
-                  ...courtResults,
-                ]
+              if (searchResults.rerankedResults.length > 0) {
+                combinedResults.law_data = searchResults.rerankedResults
+                console.log(`Legal search: ${searchResults.rerankedResults.length} results (laws=${searchResults.lawResults.length}, courts=${searchResults.courtResults.length}, internet=${searchResults.internetResults.length})`)
               }
 
               if (fileChunkIds && fileChunkIds.length > 0) {
-                console.log(
-                  `Searching ${fileChunkIds.length} user library documents`
-                )
+                console.log(`Searching ${fileChunkIds.length} user library documents`)
                 const result = await searchLibraryFiles(userQuery, fileChunkIds)
-                const finalResult = `These are the user library
-                documents search results, 
-                use them to enhance the responses. Search Results: ${result}`
-                combined_retrieved_data.push(finalResult)
-              }
-
-              // Apply Voyage reranking if enabled
-              if (useVoyage && combined_retrieved_data.length > 0) {
-                try {
-                  const voyageClient = new VoyageAIClient({
-                    apiKey: process.env.VOYAGE_API_KEY!,
-                  })
-                  
-                  // Calculate reranked_k based on number of user documents
-                  reranked_k = Math.min(15, Math.max(5, Math.ceil(caseFileCount / 3)));
-                  console.log(`🎯 Dynamic reranking: ${reranked_k} results for ${caseFileCount} documents`);
-                  
-                  const voyage_results: VoyageAI.RerankResponse =
-                    await voyageClient.rerank({
-                      model: 'rerank-2.5-lite',
-                      query: userQuery,
-                      documents: combined_retrieved_data,
-                      topK: reranked_k,
-                    })
-                  console.log('voyage_results', voyage_results)
-                  const ranked_results = voyage_results.data
-                    ?.map((result) => {
-                      const index = result.index
-                      return index !== undefined
-                        ? combined_retrieved_data[index]
-                        : undefined
-                    })
-                    .filter((item): item is string => item !== undefined)
-
-                  if (ranked_results && ranked_results.length > 0) {
-                    console.log('case_rerankedResults', ranked_results.length)
-                    combinedResults.law_data = ranked_results.slice(
-                      0,
-                      MAX_RESULTS_PER_SOURCE
-                    )
-                  }
-                } catch (e) {
-                  console.error('Error in Voyage reranking:', e)
-                  combinedResults.law_data = combined_retrieved_data.slice(
-                    0,
-                    MAX_RESULTS_PER_SOURCE
-                  )
-                }
-              } else {
-                combinedResults.law_data = combined_retrieved_data.slice(
-                  0,
-                  MAX_RESULTS_PER_SOURCE
-                )
+                const finalResult = `These are the user library documents search results, use them to enhance the responses. Search Results: ${result}`
+                if (!combinedResults.law_data) combinedResults.law_data = []
+                combinedResults.law_data.push(finalResult)
               }
 
               if (includeLawbotAnswers) {

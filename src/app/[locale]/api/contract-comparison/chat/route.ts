@@ -11,10 +11,6 @@ import { sql } from 'drizzle-orm'
 import db from '@/db/drizzle'
 import { getLLMModel } from '@/lib/models/llmModelFactory'
 import { TOOL_2_PROMPTS } from '@/lib/prompts/tool_2'
-import { elasticsearchRetrieverHybridSearch } from '@/lib/retrievers/elasticsearch_retriever'
-import { weaviateCourtSearch } from '@/lib/retrievers/weaviate_court_retriever'
-import { weaviateLawSearch } from '@/lib/retrievers/weaviate_law_retriever'
-import { decodeEscapedString } from '@/lib/decoding'
 import { VoyageAIClient, VoyageAI } from 'voyageai'
 import { AISDKExporter } from 'langsmith/vercel'
 import { createPostgressVectorStore } from '@/app/[locale]/actions/tool_2_actions'
@@ -23,18 +19,14 @@ import { recordMessageUsage } from '@/app/[locale]/actions/subscription'
 import { revalidatePath } from 'next/cache'
 import { getDefaultProviderOptions } from '@/lib/pipelineConfig'
 import { chatRateLimit, checkRateLimitOrRespond } from '@/lib/rateLimitResponse'
+import { runLegalSearchPipeline } from '@/lib/legalSearchPipeline'
 
 // ====================
 // CONFIGURATION
 // ====================
 export const maxDuration = 180
 
-// Token and character limits
 const MAX_OUTPUT_TOKEN_SIZE = 8192
-const MAX_LAW_CHARACTERS_V1 = 15_000
-const MAX_LAW_CHARACTERS_V2 = 10_000
-const MAX_PASTCASE_CHARACTERS = 15_000
-const MAX_RESULTS_PER_SOURCE = 3
 
 // ====================
 // TYPE DEFINITIONS
@@ -78,51 +70,6 @@ interface RequestBody {
 // HELPER FUNCTIONS
 // ====================
 
-/**
- * Retrieves and filters data from Elasticsearch based on character limits
- */
-async function retrieveAndFilterData(
-  query: string,
-  index: string,
-  maxCharacters: number,
-  model_name?: string
-): Promise<string[]> {
-  try {
-    console.log(`Retrieving data from index: ${index}`)
-    
-    const retrieved_data = await elasticsearchRetrieverHybridSearch(query, {
-      knn_k: 20,
-      knn_num_candidates: 60,
-      rrf_rank_window_size: 15,
-      rrf_rank_constant: 20,
-      index: index,
-      model_name: model_name,
-    })
-
-    const decoded_data = retrieved_data.map(
-      (doc: { aiVersion: string; fullReference: string }) =>
-        decodeEscapedString(doc.fullReference)
-    )
-
-    let total_characters = 0
-    const filtered_data: string[] = []
-
-    for (const doc of decoded_data) {
-      if (total_characters + doc.length <= maxCharacters) {
-        filtered_data.push(doc)
-        total_characters += doc.length
-      } else {
-        console.log(`Max characters (${maxCharacters}) reached at ${filtered_data.length} documents`)
-        break
-      }
-    }
-
-    return filtered_data
-  } catch (error) {
-    console.error('Error in retrieveAndFilterData:', error)
-    return []
-  }
-}
 
 /**
  * Processes contracts and creates cached messages for the model
@@ -161,41 +108,6 @@ async function processContracts(
   }
   
   return cachedContracts
-}
-
-/**
- * Applies Voyage AI reranking to search results
- */
-async function applyVoyageReranking(
-  documents: string[],
-  query: string,
-  topK: number
-): Promise<string[]> {
-  try {
-    const voyageClient = new VoyageAIClient({
-      apiKey: process.env.VOYAGE_API_KEY!,
-    })
-    
-    const voyage_results: VoyageAI.RerankResponse = await voyageClient.rerank({
-      model: 'rerank-2.5-lite',
-      query: query,
-      documents: documents,
-      topK: topK,
-    })
-    
-    console.log(`Voyage reranking completed: ${voyage_results.data?.length} results`)
-    
-    const ranked_results = voyage_results.data
-      ?.map((result) => {
-        return typeof result.index === 'number' ? documents[result.index] : undefined
-      })
-      .filter((item): item is string => item !== undefined)
-    
-    return ranked_results || documents
-  } catch (error) {
-    console.error('Error in Voyage reranking:', error)
-    return documents // Return original documents if reranking fails
-  }
 }
 
 // ====================
@@ -350,73 +262,17 @@ export async function POST(req: Request) {
                 case_data: caseFileData,
               }
 
-              // Collect all retrieved data for potential reranking
-              let combinedRetrievedData: string[] = []
+              // Run upgraded legal search pipeline (query analysis + parallel search + reranking + court guarantee)
+              const searchResults = await runLegalSearchPipeline(userQuery, {
+                includeGreekLaws,
+                includeGreekCourtDecisions,
+                conversationMessages: messages,
+                locale,
+              })
 
-              // Retrieve Greek Laws — Weaviate GreekLegalDocuments first, ES fallback
-              if (includeGreekLaws) {
-                console.log('Retrieving Greek Laws...')
-                let lawResults: string[] = []
-                try {
-                  const weaviateLawResults = await weaviateLawSearch(userQuery, { limit: 20 })
-                  if (weaviateLawResults.length > 0) {
-                    lawResults = weaviateLawResults.map(r => r.fullReference).slice(0, Math.ceil(MAX_LAW_CHARACTERS_V2 / 3000))
-                    console.log(`Greek Laws from Weaviate: ${lawResults.length}`)
-                  }
-                } catch (e) {
-                  console.warn('⚠️ Weaviate law search failed, using Elasticsearch fallback')
-                }
-                if (lawResults.length === 0) {
-                  lawResults = await retrieveAndFilterData(
-                    userQuery,
-                    '0825_greek_laws_collection',
-                    MAX_LAW_CHARACTERS_V2,
-                    'voyage-3.5-lite'
-                  )
-                }
-                console.log(`Retrieved ${lawResults.length} law documents`)
-                combinedRetrievedData = [...lawResults]
-              }
-
-              // Retrieve Greek Court Decisions if enabled
-              if (includeGreekCourtDecisions) {
-                console.log('Retrieving Greek Court Decisions...')
-                let courtResults: string[] = []
-                try {
-                  const weaviateResults = await weaviateCourtSearch(userQuery)
-                  if (weaviateResults.length > 0) {
-                    courtResults = weaviateResults.map(r => r.fullReference).slice(0, Math.ceil(MAX_PASTCASE_CHARACTERS / 3000))
-                    console.log(`Court Decisions from Weaviate: ${courtResults.length}`)
-                  }
-                } catch (e) {
-                  console.warn('⚠️ Weaviate court search failed, using Elasticsearch fallback')
-                }
-                if (courtResults.length === 0) {
-                  courtResults = await retrieveAndFilterData(
-                    userQuery,
-                    '0825_pastcase_collection',
-                    MAX_PASTCASE_CHARACTERS
-                  )
-                }
-                console.log(`Retrieved ${courtResults.length} court decisions`)
-                combinedRetrievedData = [...combinedRetrievedData, ...courtResults]
-              }
-
-              // Apply Voyage reranking if enabled and we have results
-              if (USE_VOYAGE && combinedRetrievedData.length > 0) {
-                console.log(`Applying Voyage reranking to ${combinedRetrievedData.length} documents...`)
-                const rankedResults = await applyVoyageReranking(
-                  combinedRetrievedData,
-                  userQuery,
-                  RERANKED_K
-                )
-                
-                combinedResults.law_data = rankedResults.slice(0, MAX_RESULTS_PER_SOURCE)
-                console.log(`Final law_data: ${combinedResults.law_data.length} documents after reranking`)
-              } else if (combinedRetrievedData.length > 0) {
-                // No reranking, just limit results
-                combinedResults.law_data = combinedRetrievedData.slice(0, MAX_RESULTS_PER_SOURCE)
-                console.log(`Final law_data: ${combinedResults.law_data.length} documents (no reranking)`)
+              if (searchResults.rerankedResults.length > 0) {
+                combinedResults.law_data = searchResults.rerankedResults
+                console.log(`Legal search: ${searchResults.rerankedResults.length} results (laws=${searchResults.lawResults.length}, courts=${searchResults.courtResults.length}, internet=${searchResults.internetResults.length})`)
               }
 
               // Append case file data to stream
